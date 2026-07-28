@@ -1,4 +1,5 @@
 require("./index.js");
+require("./deploy-commands.js");
 
 const express = require("express");
 const fs = require("fs");
