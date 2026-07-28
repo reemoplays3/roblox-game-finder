@@ -89,9 +89,9 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("whitelist")
+    .setName("permuser")
     .setDescription(
-      "Allow a Roblox user to redeem keys."
+      "Give permanent admin panel access."
     )
     .addStringOption(option =>
       option
@@ -118,13 +118,13 @@ module.exports = {
     const users = readUsers();
 
     if (
-      users.redeemAllowed.includes(
+      users.permanent.includes(
         robloxUserId
       )
     ) {
       return interaction.reply({
         content:
-          `Roblox user ID \`${robloxUserId}\` is already allowed to redeem keys.`,
+          `Roblox user ID \`${robloxUserId}\` already has permanent panel access.`,
         ephemeral: true
       });
     }
@@ -134,7 +134,7 @@ module.exports = {
       robloxUserId
     );
 
-    users.redeemAllowed.push(
+    users.permanent.push(
       robloxUserId
     );
 
@@ -142,7 +142,7 @@ module.exports = {
 
     return interaction.reply({
       content:
-        `Roblox user ID \`${robloxUserId}\` can now redeem keys and use timed panel access.`,
+        `Roblox user ID \`${robloxUserId}\` now has permanent admin panel access.`,
       ephemeral: true
     });
   }

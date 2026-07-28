@@ -89,9 +89,9 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("whitelist")
+    .setName("removeperm")
     .setDescription(
-      "Allow a Roblox user to redeem keys."
+      "Remove permanent panel access."
     )
     .addStringOption(option =>
       option
@@ -118,31 +118,42 @@ module.exports = {
     const users = readUsers();
 
     if (
-      users.redeemAllowed.includes(
+      !users.permanent.includes(
         robloxUserId
       )
     ) {
       return interaction.reply({
         content:
-          `Roblox user ID \`${robloxUserId}\` is already allowed to redeem keys.`,
+          `Roblox user ID \`${robloxUserId}\` does not have permanent panel access.`,
         ephemeral: true
       });
     }
+
+    users.permanent = removeId(
+      users.permanent,
+      robloxUserId
+    );
 
     users.blacklisted = removeId(
       users.blacklisted,
       robloxUserId
     );
 
-    users.redeemAllowed.push(
-      robloxUserId
-    );
+    if (
+      !users.redeemAllowed.includes(
+        robloxUserId
+      )
+    ) {
+      users.redeemAllowed.push(
+        robloxUserId
+      );
+    }
 
     writeUsers(users);
 
     return interaction.reply({
       content:
-        `Roblox user ID \`${robloxUserId}\` can now redeem keys and use timed panel access.`,
+        `Permanent access was removed from \`${robloxUserId}\`. They can still redeem keys normally.`,
       ephemeral: true
     });
   }

@@ -60,13 +60,36 @@ function readUsersDatabase() {
       fs.readFileSync(usersPath, "utf8")
     );
 
-    if (!Array.isArray(users.whitelisted)) {
-      users.whitelisted = [];
+    const legacyPermanent = Array.isArray(
+      users.whitelisted
+    )
+      ? users.whitelisted.map(String)
+      : [];
+
+    if (!Array.isArray(users.redeemAllowed)) {
+      users.redeemAllowed = [];
+    }
+
+    if (!Array.isArray(users.permanent)) {
+      users.permanent = [];
     }
 
     if (!Array.isArray(users.blacklisted)) {
       users.blacklisted = [];
     }
+
+    users.redeemAllowed =
+      users.redeemAllowed.map(String);
+
+    users.permanent = Array.from(
+      new Set([
+        ...users.permanent.map(String),
+        ...legacyPermanent
+      ])
+    );
+
+    users.blacklisted =
+      users.blacklisted.map(String);
 
     return users;
   } catch (error) {
@@ -76,18 +99,24 @@ function readUsersDatabase() {
     );
 
     return {
-      whitelisted: [],
+      redeemAllowed: [],
+      permanent: [],
       blacklisted: []
     };
   }
 }
 
-function getPermanentStatus(robloxUserId) {
+function getAccessListStatus(robloxUserId) {
   const users = readUsersDatabase();
 
   return {
+    allowedToRedeem:
+      users.redeemAllowed.includes(
+        robloxUserId
+      ),
+
     permanentlyWhitelisted:
-      users.whitelisted.includes(
+      users.permanent.includes(
         robloxUserId
       ),
 
@@ -152,13 +181,15 @@ function getUserStatus(
   }
 
   const permanentStatus =
-    getPermanentStatus(robloxUserId);
+    getAccessListStatus(robloxUserId);
 
   return {
     hasRedeemedBefore,
     hasActiveKey: remainingSeconds > 0,
     paused,
     remainingSeconds,
+    allowedToRedeem:
+      permanentStatus.allowedToRedeem,
     permanentlyWhitelisted:
       permanentStatus.permanentlyWhitelisted,
     blacklisted:
@@ -195,7 +226,7 @@ app.post("/redeem", (req, res) => {
   }
 
   const permanentStatus =
-    getPermanentStatus(robloxUserId);
+    getAccessListStatus(robloxUserId);
 
   if (permanentStatus.blacklisted) {
     return res.status(403).json({
@@ -212,11 +243,23 @@ app.post("/redeem", (req, res) => {
     return res.json({
       success: true,
       permanentlyWhitelisted: true,
+      allowedToRedeem: true,
       hasRedeemedBefore: false,
       hasActiveKey: false,
       remainingSeconds: 0,
       message:
-        "This Roblox user is permanently whitelisted."
+        "This Roblox user has permanent access."
+    });
+  }
+
+  if (!permanentStatus.allowedToRedeem) {
+    return res.status(403).json({
+      success: false,
+      permanentlyWhitelisted: false,
+      allowedToRedeem: false,
+      blacklisted: false,
+      message:
+        "You are not whitelisted to redeem a key."
     });
   }
 
@@ -290,6 +333,7 @@ app.post("/redeem", (req, res) => {
     ),
     hasRedeemedBefore: true,
     hasActiveKey: true,
+    allowedToRedeem: true,
     permanentlyWhitelisted: false,
     blacklisted: false
   });
@@ -309,7 +353,7 @@ app.post("/pause-time", (req, res) => {
   }
 
   const permanentStatus =
-    getPermanentStatus(robloxUserId);
+    getAccessListStatus(robloxUserId);
 
   if (permanentStatus.blacklisted) {
     return res.status(403).json({
@@ -456,6 +500,8 @@ app.post("/validate", (req, res) => {
       success: false,
       blacklisted: true,
       permanentlyWhitelisted: false,
+      allowedToRedeem:
+        status.allowedToRedeem,
       hasRedeemedBefore:
         status.hasRedeemedBefore,
       hasActiveKey: false,
@@ -470,6 +516,9 @@ app.post("/validate", (req, res) => {
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
+
+    allowedToRedeem:
+      status.allowedToRedeem,
 
     blacklisted: false,
 
@@ -512,6 +561,9 @@ app.post("/user-status", (req, res) => {
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
+
+    allowedToRedeem:
+      status.allowedToRedeem,
 
     blacklisted:
       status.blacklisted,
