@@ -10,7 +10,11 @@ const PORT = process.env.PORT || 3000;
 
 const keysPath = path.join(process.cwd(), "data", "keys.json");
 
-const usersPath = path.join(process.cwd(), "data", "users.json");
+const usersPath = path.join(
+  __dirname,
+  "data",
+  "users.json"
+);
 
 app.use(express.json());
 
@@ -64,9 +68,6 @@ function readUsersDatabase() {
       users.blacklisted = [];
     }
 
-    users.whitelisted = users.whitelisted.map(String);
-    users.blacklisted = users.blacklisted.map(String);
-
     return users;
   } catch (error) {
     console.error(
@@ -112,26 +113,42 @@ function getUserStatus(
   const hasRedeemedBefore =
     redeemedKeys.length > 0;
 
-  const activeKeys = redeemedKeys.filter(
-    item =>
-      !item.revoked &&
-      Number(item.expiresAt) > now
+  const validKeys = redeemedKeys.filter(
+    item => !item.revoked
   );
 
   let remainingSeconds = 0;
+  let paused = false;
 
-  for (const item of activeKeys) {
-    const secondsLeft = Math.floor(
-      (
-        Number(item.expiresAt) -
-        now
-      ) / 1000
-    );
+  for (const item of validKeys) {
+    if (item.paused === true) {
+      const pausedSeconds = Math.max(
+        0,
+        Math.floor(
+          Number(item.pausedRemainingSeconds) || 0
+        )
+      );
 
-    remainingSeconds = Math.max(
-      remainingSeconds,
-      secondsLeft
-    );
+      if (pausedSeconds > remainingSeconds) {
+        remainingSeconds = pausedSeconds;
+        paused = true;
+      }
+
+      continue;
+    }
+
+    const expiresAt = Number(item.expiresAt);
+
+    if (expiresAt > now) {
+      const secondsLeft = Math.floor(
+        (expiresAt - now) / 1000
+      );
+
+      if (secondsLeft > remainingSeconds) {
+        remainingSeconds = secondsLeft;
+        paused = false;
+      }
+    }
   }
 
   const permanentStatus =
@@ -139,25 +156,13 @@ function getUserStatus(
 
   return {
     hasRedeemedBefore,
-
-    hasActiveKey:
-      remainingSeconds > 0,
-
+    hasActiveKey: remainingSeconds > 0,
+    paused,
     remainingSeconds,
-
     permanentlyWhitelisted:
       permanentStatus.permanentlyWhitelisted,
-
     blacklisted:
-      permanentStatus.blacklisted,
-
-    canOpenPanel:
-      !permanentStatus.blacklisted &&
-      (permanentStatus.permanentlyWhitelisted || remainingSeconds > 0),
-
-    canRejoin:
-      !permanentStatus.blacklisted &&
-      (permanentStatus.permanentlyWhitelisted || remainingSeconds > 0)
+      permanentStatus.blacklisted
   };
 }
 
@@ -210,11 +215,8 @@ app.post("/redeem", (req, res) => {
       hasRedeemedBefore: false,
       hasActiveKey: false,
       remainingSeconds: 0,
-      canOpenPanel: true,
-      canRejoin: true,
-      blacklisted: false,
       message:
-        "This Roblox user has permanent panel access."
+        "This Roblox user is permanently whitelisted."
     });
   }
 
@@ -269,6 +271,8 @@ app.post("/redeem", (req, res) => {
   foundKey.redeemedAt = now;
   foundKey.expiresAt =
     now + minutes * 60 * 1000;
+  foundKey.paused = false;
+  foundKey.pausedRemainingSeconds = 0;
 
   writeKeysDatabase(database);
 
@@ -284,6 +288,142 @@ app.post("/redeem", (req, res) => {
         now
       ) / 1000
     ),
+    hasRedeemedBefore: true,
+    hasActiveKey: true,
+    permanentlyWhitelisted: false,
+    blacklisted: false
+  });
+});
+
+
+app.post("/pause-time", (req, res) => {
+  const robloxUserId = String(
+    req.body.robloxUserId || ""
+  ).trim();
+
+  if (!robloxUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "No Roblox user ID provided."
+    });
+  }
+
+  const permanentStatus =
+    getPermanentStatus(robloxUserId);
+
+  if (permanentStatus.blacklisted) {
+    return res.status(403).json({
+      success: false,
+      blacklisted: true,
+      message: "This Roblox user is blacklisted."
+    });
+  }
+
+  if (permanentStatus.permanentlyWhitelisted) {
+    return res.status(400).json({
+      success: false,
+      message: "Permanent access cannot be paused."
+    });
+  }
+
+  const database = readKeysDatabase();
+  const now = Date.now();
+
+  const activeKey = database.keys.find(
+    item =>
+      String(item.redeemedBy || "") === robloxUserId &&
+      !item.revoked &&
+      item.paused !== true &&
+      Number(item.expiresAt) > now
+  );
+
+  if (!activeKey) {
+    return res.status(404).json({
+      success: false,
+      message: "You do not have running time to pause."
+    });
+  }
+
+  const remainingSeconds = Math.floor(
+    (Number(activeKey.expiresAt) - now) / 1000
+  );
+
+  if (remainingSeconds <= 600) {
+    return res.status(400).json({
+      success: false,
+      message: "You need more than 10 minutes left to pause."
+    });
+  }
+
+  activeKey.paused = true;
+  activeKey.pausedRemainingSeconds =
+    remainingSeconds - 600;
+  activeKey.expiresAt = null;
+  activeKey.pausedAt = now;
+
+  writeKeysDatabase(database);
+
+  return res.json({
+    success: true,
+    message: "Time paused. 10 minutes were deducted.",
+    paused: true,
+    remainingSeconds:
+      activeKey.pausedRemainingSeconds,
+    hasRedeemedBefore: true,
+    hasActiveKey: true,
+    permanentlyWhitelisted: false,
+    blacklisted: false
+  });
+});
+
+app.post("/resume-time", (req, res) => {
+  const robloxUserId = String(
+    req.body.robloxUserId || ""
+  ).trim();
+
+  if (!robloxUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "No Roblox user ID provided."
+    });
+  }
+
+  const database = readKeysDatabase();
+
+  const pausedKey = database.keys.find(
+    item =>
+      String(item.redeemedBy || "") === robloxUserId &&
+      !item.revoked &&
+      item.paused === true &&
+      Number(item.pausedRemainingSeconds) > 0
+  );
+
+  if (!pausedKey) {
+    return res.status(404).json({
+      success: false,
+      message: "You do not have paused time to resume."
+    });
+  }
+
+  const now = Date.now();
+  const remainingSeconds = Math.floor(
+    Number(pausedKey.pausedRemainingSeconds)
+  );
+
+  pausedKey.paused = false;
+  pausedKey.expiresAt =
+    now + remainingSeconds * 1000;
+  pausedKey.pausedRemainingSeconds = 0;
+  pausedKey.resumedAt = now;
+
+  writeKeysDatabase(database);
+
+  return res.json({
+    success: true,
+    message: "Time resumed.",
+    paused: false,
+    expiresAt: pausedKey.expiresAt,
+    remainingSeconds,
     hasRedeemedBefore: true,
     hasActiveKey: true,
     permanentlyWhitelisted: false,
@@ -319,9 +459,7 @@ app.post("/validate", (req, res) => {
       hasRedeemedBefore:
         status.hasRedeemedBefore,
       hasActiveKey: false,
-      remainingSeconds: 0,
-      canOpenPanel: false,
-      canRejoin: false
+      remainingSeconds: 0
     });
   }
 
@@ -341,14 +479,11 @@ app.post("/validate", (req, res) => {
     hasActiveKey:
       status.hasActiveKey,
 
+    paused:
+      status.paused,
+
     remainingSeconds:
-      status.remainingSeconds,
-
-    canOpenPanel:
-      status.canOpenPanel,
-
-    canRejoin:
-      status.canRejoin
+      status.remainingSeconds
   });
 });
 
@@ -387,14 +522,11 @@ app.post("/user-status", (req, res) => {
     hasActiveKey:
       status.hasActiveKey,
 
+    paused:
+      status.paused,
+
     remainingSeconds:
-      status.remainingSeconds,
-
-    canOpenPanel:
-      status.canOpenPanel,
-
-    canRejoin:
-      status.canRejoin
+      status.remainingSeconds
   });
 });
 
