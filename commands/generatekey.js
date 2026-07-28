@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
-const dataPath = path.join(__dirname, "..", "data", "keys.json");
+const dataPath = path.join(process.cwd(), "data", "keys.json");
 
 function makeKey() {
   return crypto.randomBytes(9).toString("hex").toUpperCase();
@@ -48,6 +48,9 @@ module.exports = {
       revoked: false,
       revokedAt: null
     });
+
+      console.log("Saving new key to:", dataPath);
+      console.log("New key:", key);
 
     fs.writeFileSync(
       dataPath,

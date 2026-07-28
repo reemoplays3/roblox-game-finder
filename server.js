@@ -8,11 +8,7 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const keysPath = path.join(
-  __dirname,
-  "data",
-  "keys.json"
-);
+const keysPath = path.join(process.cwd(), "data", "keys.json");
 
 const usersPath = path.join(
   __dirname,
@@ -49,6 +45,8 @@ function writeKeysDatabase(database) {
   fs.mkdirSync(path.dirname(keysPath), {
     recursive: true
   });
+
+console.log("Redeem system reading keys from:", keysPath);
 
   fs.writeFileSync(
     keysPath,
