@@ -60,7 +60,7 @@ function readUsersDatabase() {
       fs.readFileSync(usersPath, "utf8")
     );
 
-    const legacyPermanent = Array.isArray(
+    const legacyRedeemAllowed = Array.isArray(
       users.whitelisted
     )
       ? users.whitelisted.map(String)
@@ -78,15 +78,15 @@ function readUsersDatabase() {
       users.blacklisted = [];
     }
 
-    users.redeemAllowed =
-      users.redeemAllowed.map(String);
-
-    users.permanent = Array.from(
+    users.redeemAllowed = Array.from(
       new Set([
-        ...users.permanent.map(String),
-        ...legacyPermanent
+        ...users.redeemAllowed.map(String),
+        ...legacyRedeemAllowed
       ])
     );
+
+    users.permanent =
+      users.permanent.map(String);
 
     users.blacklisted =
       users.blacklisted.map(String);

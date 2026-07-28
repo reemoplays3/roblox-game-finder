@@ -2,8 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const usersPath = path.join(
-  __dirname,
-  ".",
+  process.cwd(),
   "data",
   "users.json"
 );
@@ -24,19 +23,19 @@ function readUsers() {
       fs.readFileSync(usersPath, "utf8")
     );
 
-    const legacyPermanent =
+    const legacyRedeemAllowed =
       normalizeIds(raw.whitelisted);
 
     return {
-      redeemAllowed:
-        normalizeIds(raw.redeemAllowed),
-
-      permanent: Array.from(
+      redeemAllowed: Array.from(
         new Set([
-          ...normalizeIds(raw.permanent),
-          ...legacyPermanent
+          ...normalizeIds(raw.redeemAllowed),
+          ...legacyRedeemAllowed
         ])
       ),
+
+      permanent:
+        normalizeIds(raw.permanent),
 
       blacklisted:
         normalizeIds(raw.blacklisted)
@@ -89,7 +88,7 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("permuser")
+    .setName("permadd")
     .setDescription(
       "Give permanent admin panel access."
     )
