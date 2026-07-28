@@ -5,12 +5,7 @@ const {
   SlashCommandBuilder
 } = require("discord.js");
 
-const usersPath = path.join(
-  __dirname,
-  "..",
-  "data",
-  "users.json"
-);
+const usersPath = path.join(process.cwd(), "data", "users.json");
 
 function readUsers() {
   try {
@@ -52,7 +47,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName("whitelist")
     .setDescription(
-      "Permanently whitelist a Roblox user ID."
+      "Give a Roblox user access to the Rejoin button."
     )
     .addStringOption(option =>
       option

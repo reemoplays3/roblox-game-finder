@@ -10,11 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 const keysPath = path.join(process.cwd(), "data", "keys.json");
 
-const usersPath = path.join(
-  __dirname,
-  "data",
-  "users.json"
-);
+const usersPath = path.join(process.cwd(), "data", "users.json");
 
 app.use(express.json());
 
@@ -194,20 +190,6 @@ app.post("/redeem", (req, res) => {
     });
   }
 
-  if (
-    permanentStatus.permanentlyWhitelisted
-  ) {
-    return res.json({
-      success: true,
-      permanentlyWhitelisted: true,
-      hasRedeemedBefore: false,
-      hasActiveKey: false,
-      remainingSeconds: 0,
-      message:
-        "This Roblox user is permanently whitelisted."
-    });
-  }
-
   const database = readKeysDatabase();
 
   const foundKey = database.keys.find(
@@ -309,17 +291,24 @@ app.post("/validate", (req, res) => {
       hasRedeemedBefore:
         status.hasRedeemedBefore,
       hasActiveKey: false,
-      remainingSeconds: 0
+      remainingSeconds: 0,
+      canUseRejoin: false,
+      canUsePanel: false
     });
   }
 
   return res.json({
     success:
-      status.permanentlyWhitelisted ||
       status.hasActiveKey,
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
+
+    canUseRejoin:
+      status.permanentlyWhitelisted,
+
+    canUsePanel:
+      status.hasActiveKey,
 
     blacklisted: false,
 
@@ -359,6 +348,12 @@ app.post("/user-status", (req, res) => {
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
+
+    canUseRejoin:
+      status.permanentlyWhitelisted && !status.blacklisted,
+
+    canUsePanel:
+      status.hasActiveKey && !status.blacklisted,
 
     blacklisted:
       status.blacklisted,
