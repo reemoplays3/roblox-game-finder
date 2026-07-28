@@ -88,7 +88,7 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("permadd")
+    .setName("addperm")
     .setDescription(
       "Give permanent admin panel access."
     )
