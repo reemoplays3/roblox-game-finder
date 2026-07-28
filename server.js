@@ -64,6 +64,9 @@ function readUsersDatabase() {
       users.blacklisted = [];
     }
 
+    users.whitelisted = users.whitelisted.map(String);
+    users.blacklisted = users.blacklisted.map(String);
+
     return users;
   } catch (error) {
     console.error(
@@ -146,7 +149,15 @@ function getUserStatus(
       permanentStatus.permanentlyWhitelisted,
 
     blacklisted:
-      permanentStatus.blacklisted
+      permanentStatus.blacklisted,
+
+    canOpenPanel:
+      !permanentStatus.blacklisted &&
+      (permanentStatus.permanentlyWhitelisted || remainingSeconds > 0),
+
+    canRejoin:
+      !permanentStatus.blacklisted &&
+      (permanentStatus.permanentlyWhitelisted || remainingSeconds > 0)
   };
 }
 
@@ -187,6 +198,23 @@ app.post("/redeem", (req, res) => {
       blacklisted: true,
       message:
         "This Roblox user is permanently blacklisted."
+    });
+  }
+
+  if (
+    permanentStatus.permanentlyWhitelisted
+  ) {
+    return res.json({
+      success: true,
+      permanentlyWhitelisted: true,
+      hasRedeemedBefore: false,
+      hasActiveKey: false,
+      remainingSeconds: 0,
+      canOpenPanel: true,
+      canRejoin: true,
+      blacklisted: false,
+      message:
+        "This Roblox user has permanent panel access."
     });
   }
 
@@ -292,23 +320,18 @@ app.post("/validate", (req, res) => {
         status.hasRedeemedBefore,
       hasActiveKey: false,
       remainingSeconds: 0,
-      canUseRejoin: false,
-      canUsePanel: false
+      canOpenPanel: false,
+      canRejoin: false
     });
   }
 
   return res.json({
     success:
+      status.permanentlyWhitelisted ||
       status.hasActiveKey,
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
-
-    canUseRejoin:
-      status.permanentlyWhitelisted,
-
-    canUsePanel:
-      status.hasActiveKey,
 
     blacklisted: false,
 
@@ -319,7 +342,13 @@ app.post("/validate", (req, res) => {
       status.hasActiveKey,
 
     remainingSeconds:
-      status.remainingSeconds
+      status.remainingSeconds,
+
+    canOpenPanel:
+      status.canOpenPanel,
+
+    canRejoin:
+      status.canRejoin
   });
 });
 
@@ -349,12 +378,6 @@ app.post("/user-status", (req, res) => {
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
 
-    canUseRejoin:
-      status.permanentlyWhitelisted && !status.blacklisted,
-
-    canUsePanel:
-      status.hasActiveKey && !status.blacklisted,
-
     blacklisted:
       status.blacklisted,
 
@@ -365,7 +388,13 @@ app.post("/user-status", (req, res) => {
       status.hasActiveKey,
 
     remainingSeconds:
-      status.remainingSeconds
+      status.remainingSeconds,
+
+    canOpenPanel:
+      status.canOpenPanel,
+
+    canRejoin:
+      status.canRejoin
   });
 });
 

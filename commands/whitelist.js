@@ -46,9 +46,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("whitelist")
-    .setDescription(
-      "Give a Roblox user access to the Rejoin button."
-    )
+    .setDescription("Give a Roblox user permanent panel access.")
     .addStringOption(option =>
       option
         .setName("roblox_user_id")

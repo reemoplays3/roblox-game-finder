@@ -46,9 +46,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("blacklist")
-    .setDescription(
-      "Block a Roblox user from redeeming or using keys."
-    )
+    .setDescription("Block a Roblox user from keys and panel access.")
     .addStringOption(option =>
       option
         .setName("roblox_user_id")
