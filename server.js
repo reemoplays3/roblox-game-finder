@@ -8,14 +8,24 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const dataPath = path.join(__dirname, "data", "keys.json");
+const keysPath = path.join(
+  __dirname,
+  "data",
+  "keys.json"
+);
+
+const usersPath = path.join(
+  __dirname,
+  "data",
+  "users.json"
+);
 
 app.use(express.json());
 
-function readDatabase() {
+function readKeysDatabase() {
   try {
     const database = JSON.parse(
-      fs.readFileSync(dataPath, "utf8")
+      fs.readFileSync(keysPath, "utf8")
     );
 
     if (!Array.isArray(database.keys)) {
@@ -24,7 +34,10 @@ function readDatabase() {
 
     return database;
   } catch (error) {
-    console.error("Could not read keys.json:", error);
+    console.error(
+      "Could not read keys.json:",
+      error
+    );
 
     return {
       keys: []
@@ -32,25 +45,75 @@ function readDatabase() {
   }
 }
 
-function writeDatabase(database) {
-  fs.mkdirSync(path.dirname(dataPath), {
+function writeKeysDatabase(database) {
+  fs.mkdirSync(path.dirname(keysPath), {
     recursive: true
   });
 
   fs.writeFileSync(
-    dataPath,
+    keysPath,
     JSON.stringify(database, null, 2)
   );
 }
 
-function getUserStatus(database, robloxUserId) {
+function readUsersDatabase() {
+  try {
+    const users = JSON.parse(
+      fs.readFileSync(usersPath, "utf8")
+    );
+
+    if (!Array.isArray(users.whitelisted)) {
+      users.whitelisted = [];
+    }
+
+    if (!Array.isArray(users.blacklisted)) {
+      users.blacklisted = [];
+    }
+
+    return users;
+  } catch (error) {
+    console.error(
+      "Could not read users.json:",
+      error
+    );
+
+    return {
+      whitelisted: [],
+      blacklisted: []
+    };
+  }
+}
+
+function getPermanentStatus(robloxUserId) {
+  const users = readUsersDatabase();
+
+  return {
+    permanentlyWhitelisted:
+      users.whitelisted.includes(
+        robloxUserId
+      ),
+
+    blacklisted:
+      users.blacklisted.includes(
+        robloxUserId
+      )
+  };
+}
+
+function getUserStatus(
+  database,
+  robloxUserId
+) {
   const now = Date.now();
 
   const redeemedKeys = database.keys.filter(
-    item => String(item.redeemedBy || "") === robloxUserId
+    item =>
+      String(item.redeemedBy || "") ===
+      robloxUserId
   );
 
-  const hasRedeemedBefore = redeemedKeys.length > 0;
+  const hasRedeemedBefore =
+    redeemedKeys.length > 0;
 
   const activeKeys = redeemedKeys.filter(
     item =>
@@ -62,7 +125,10 @@ function getUserStatus(database, robloxUserId) {
 
   for (const item of activeKeys) {
     const secondsLeft = Math.floor(
-      (Number(item.expiresAt) - now) / 1000
+      (
+        Number(item.expiresAt) -
+        now
+      ) / 1000
     );
 
     remainingSeconds = Math.max(
@@ -71,10 +137,22 @@ function getUserStatus(database, robloxUserId) {
     );
   }
 
+  const permanentStatus =
+    getPermanentStatus(robloxUserId);
+
   return {
     hasRedeemedBefore,
-    hasActiveKey: remainingSeconds > 0,
-    remainingSeconds
+
+    hasActiveKey:
+      remainingSeconds > 0,
+
+    remainingSeconds,
+
+    permanentlyWhitelisted:
+      permanentStatus.permanentlyWhitelisted,
+
+    blacklisted:
+      permanentStatus.blacklisted
   };
 }
 
@@ -101,11 +179,38 @@ app.post("/redeem", (req, res) => {
   if (!robloxUserId) {
     return res.status(400).json({
       success: false,
-      message: "No Roblox user ID was provided."
+      message:
+        "No Roblox user ID was provided."
     });
   }
 
-  const database = readDatabase();
+  const permanentStatus =
+    getPermanentStatus(robloxUserId);
+
+  if (permanentStatus.blacklisted) {
+    return res.status(403).json({
+      success: false,
+      blacklisted: true,
+      message:
+        "This Roblox user is permanently blacklisted."
+    });
+  }
+
+  if (
+    permanentStatus.permanentlyWhitelisted
+  ) {
+    return res.json({
+      success: true,
+      permanentlyWhitelisted: true,
+      hasRedeemedBefore: false,
+      hasActiveKey: false,
+      remainingSeconds: 0,
+      message:
+        "This Roblox user is permanently whitelisted."
+    });
+  }
+
+  const database = readKeysDatabase();
 
   const foundKey = database.keys.find(
     item => item.key === enteredKey
@@ -121,23 +226,31 @@ app.post("/redeem", (req, res) => {
   if (foundKey.revoked) {
     return res.status(403).json({
       success: false,
-      message: "This key has been revoked."
+      message:
+        "This key has been revoked."
     });
   }
 
   if (foundKey.redeemed) {
     return res.status(409).json({
       success: false,
-      message: "This key has already been redeemed."
+      message:
+        "This key has already been redeemed."
     });
   }
 
-  const minutes = Number(foundKey.minutes);
+  const minutes = Number(
+    foundKey.minutes
+  );
 
-  if (!Number.isFinite(minutes) || minutes <= 0) {
+  if (
+    !Number.isFinite(minutes) ||
+    minutes <= 0
+  ) {
     return res.status(500).json({
       success: false,
-      message: "This key has an invalid duration."
+      message:
+        "This key has an invalid duration."
     });
   }
 
@@ -149,16 +262,24 @@ app.post("/redeem", (req, res) => {
   foundKey.expiresAt =
     now + minutes * 60 * 1000;
 
-  writeDatabase(database);
+  writeKeysDatabase(database);
 
   return res.json({
     success: true,
-    message: "Key redeemed successfully.",
-    expiresAt: foundKey.expiresAt,
+    message:
+      "Key redeemed successfully.",
+    expiresAt:
+      foundKey.expiresAt,
     remainingSeconds: Math.floor(
-      (foundKey.expiresAt - now) / 1000
+      (
+        foundKey.expiresAt -
+        now
+      ) / 1000
     ),
-    hasRedeemedBefore: true
+    hasRedeemedBefore: true,
+    hasActiveKey: true,
+    permanentlyWhitelisted: false,
+    blacklisted: false
   });
 });
 
@@ -170,23 +291,46 @@ app.post("/validate", (req, res) => {
   if (!robloxUserId) {
     return res.status(400).json({
       success: false,
-      message: "No Roblox user ID provided."
+      message:
+        "No Roblox user ID provided."
     });
   }
 
-  const database = readDatabase();
+  const database = readKeysDatabase();
 
   const status = getUserStatus(
     database,
     robloxUserId
   );
 
+  if (status.blacklisted) {
+    return res.json({
+      success: false,
+      blacklisted: true,
+      permanentlyWhitelisted: false,
+      hasRedeemedBefore:
+        status.hasRedeemedBefore,
+      hasActiveKey: false,
+      remainingSeconds: 0
+    });
+  }
+
   return res.json({
-    success: status.hasActiveKey,
+    success:
+      status.permanentlyWhitelisted ||
+      status.hasActiveKey,
+
+    permanentlyWhitelisted:
+      status.permanentlyWhitelisted,
+
+    blacklisted: false,
+
     hasRedeemedBefore:
       status.hasRedeemedBefore,
+
     hasActiveKey:
       status.hasActiveKey,
+
     remainingSeconds:
       status.remainingSeconds
   });
@@ -200,11 +344,12 @@ app.post("/user-status", (req, res) => {
   if (!robloxUserId) {
     return res.status(400).json({
       success: false,
-      message: "No Roblox user ID provided."
+      message:
+        "No Roblox user ID provided."
     });
   }
 
-  const database = readDatabase();
+  const database = readKeysDatabase();
 
   const status = getUserStatus(
     database,
@@ -213,10 +358,19 @@ app.post("/user-status", (req, res) => {
 
   return res.json({
     success: true,
+
+    permanentlyWhitelisted:
+      status.permanentlyWhitelisted,
+
+    blacklisted:
+      status.blacklisted,
+
     hasRedeemedBefore:
       status.hasRedeemedBefore,
+
     hasActiveKey:
       status.hasActiveKey,
+
     remainingSeconds:
       status.remainingSeconds
   });
