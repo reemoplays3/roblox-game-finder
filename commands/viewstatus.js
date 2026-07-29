@@ -51,21 +51,6 @@ function readStatusDatabase() {
   const users = readJson(usersPath, {});
   const keys = readJson(keysPath, { keys: [] });
 
-  /*
-   * Supports both the newest and older Sweet TP formats:
-   *
-   * New:
-   *   redeemAllowed
-   *   permanent
-   *   blacklisted
-   *
-   * Older:
-   *   whitelisted
-   *   blacklisted
-   *
-   * Anyone who has redeemed a key before is also included
-   * in the Whitelisted section.
-   */
   const redeemedUserIds = normalizeIds(
     Array.isArray(keys.keys)
       ? keys.keys
@@ -82,12 +67,6 @@ function readStatusDatabase() {
 
   const permanent = normalizeIds([
     ...normalizeIds(users.permanent),
-
-    /*
-     * Some older versions used "whitelisted" to mean
-     * permanent access. Keep compatibility only when
-     * a separate permanent array does not exist.
-     */
     ...(
       Array.isArray(users.permanent)
         ? []
@@ -109,14 +88,18 @@ function readStatusDatabase() {
 async function fetchRobloxProfiles(userIds) {
   const profiles = new Map();
 
-  if (userIds.length === 0) {
-    return profiles;
-  }
-
-  for (let index = 0; index < userIds.length; index += 100) {
+  for (
+    let index = 0;
+    index < userIds.length;
+    index += 100
+  ) {
     const batch = userIds
       .slice(index, index + 100)
       .map(Number);
+
+    if (batch.length === 0) {
+      continue;
+    }
 
     try {
       const response = await fetch(
@@ -135,7 +118,7 @@ async function fetchRobloxProfiles(userIds) {
 
       if (!response.ok) {
         throw new Error(
-          `Roblox users API returned ${response.status}`
+          `Roblox API returned ${response.status}`
         );
       }
 
@@ -147,11 +130,7 @@ async function fetchRobloxProfiles(userIds) {
           username:
             profile.name || `User ${profile.id}`,
           displayName:
-            profile.displayName || profile.name,
-          description:
-            profile.description || "",
-          hasVerifiedBadge:
-            profile.hasVerifiedBadge === true
+            profile.displayName || profile.name
         });
       }
     } catch (error) {
@@ -165,62 +144,9 @@ async function fetchRobloxProfiles(userIds) {
   return profiles;
 }
 
-async function fetchRobloxThumbnails(userIds) {
-  const thumbnails = new Map();
-
-  for (let index = 0; index < userIds.length; index += 100) {
-    const batch = userIds.slice(index, index + 100);
-
-    if (batch.length === 0) {
-      continue;
-    }
-
-    const url =
-      "https://thumbnails.roblox.com/v1/users/avatar-headshot" +
-      `?userIds=${encodeURIComponent(batch.join(","))}` +
-      "&size=150x150" +
-      "&format=Png" +
-      "&isCircular=true";
-
-    try {
-      const response = await fetch(url);
-
-      if (!response.ok) {
-        throw new Error(
-          `Roblox thumbnails API returned ${response.status}`
-        );
-      }
-
-      const body = await response.json();
-
-      for (const thumbnail of body.data || []) {
-        if (thumbnail.imageUrl) {
-          thumbnails.set(
-            String(thumbnail.targetId),
-            thumbnail.imageUrl
-          );
-        }
-      }
-    } catch (error) {
-      console.error(
-        "Could not fetch Roblox thumbnails:",
-        error
-      );
-    }
-  }
-
-  return thumbnails;
-}
-
-function createProfileEmbed({
-  userId,
-  profile,
-  thumbnail,
-  category,
-  categoryColor
-}) {
+function profileLine(userId, profile) {
   const username =
-    profile?.username || `Unknown User`;
+    profile?.username || "Unknown User";
 
   const displayName =
     profile?.displayName || username;
@@ -228,97 +154,80 @@ function createProfileEmbed({
   const profileUrl =
     `https://www.roblox.com/users/${userId}/profile`;
 
-  const embed = new EmbedBuilder()
-    .setColor(categoryColor)
-    .setAuthor({
-      name: category
-    })
-    .setTitle(
-      displayName === username
-        ? username
-        : `${displayName} (@${username})`
-    )
-    .setURL(profileUrl)
-    .addFields(
-      {
-        name: "Roblox Username",
-        value: `\`${username}\``,
-        inline: true
-      },
-      {
-        name: "Roblox User ID",
-        value: `\`${userId}\``,
-        inline: true
-      },
-      {
-        name: "Profile",
-        value: `[Open Roblox Profile](${profileUrl})`,
-        inline: false
-      }
-    );
+  const shownName =
+    displayName === username
+      ? username
+      : `${displayName} (@${username})`;
 
-  if (thumbnail) {
-    embed.setThumbnail(thumbnail);
-  }
-
-  if (profile?.hasVerifiedBadge) {
-    embed.setFooter({
-      text: "Roblox verified account"
-    });
-  }
-
-  return embed;
+  return (
+    `👤 **${shownName}**\n` +
+    `🆔 \`${userId}\` • ` +
+    `[Roblox Profile](${profileUrl})`
+  );
 }
 
-async function sendCategory({
-  interaction,
-  category,
+function buildSection({
+  title,
+  icon,
   userIds,
   profiles,
-  thumbnails,
-  color
+  maxLength = 1024
 }) {
   if (userIds.length === 0) {
-    const emptyEmbed = new EmbedBuilder()
-      .setColor(color)
-      .setTitle(category)
-      .setDescription(
-        `No users are currently listed as ${category.toLowerCase()}.`
-      );
-
-    await interaction.followUp({
-      embeds: [emptyEmbed],
-      ephemeral: true
-    });
-
-    return;
+    return {
+      name: `${icon} ${title} (0)`,
+      value: "No users currently listed.",
+      inline: false
+    };
   }
 
-  const embeds = userIds.map(userId =>
-    createProfileEmbed({
-      userId,
-      profile: profiles.get(userId),
-      thumbnail: thumbnails.get(userId),
-      category,
-      categoryColor: color
-    })
-  );
+  const sorted = [...userIds].sort((a, b) => {
+    const nameA =
+      profiles.get(a)?.username || a;
 
-  /*
-   * Discord allows up to 10 embeds per message.
-   */
-  for (let index = 0; index < embeds.length; index += 10) {
-    const batch = embeds.slice(index, index + 10);
+    const nameB =
+      profiles.get(b)?.username || b;
 
-    await interaction.followUp({
-      content:
-        index === 0
-          ? `**${category} — ${userIds.length} user${userIds.length === 1 ? "" : "s"}**`
-          : undefined,
-      embeds: batch,
-      ephemeral: true
-    });
+    return nameA.localeCompare(nameB);
+  });
+
+  const lines = [];
+  let currentLength = 0;
+  let hiddenCount = 0;
+
+  for (const userId of sorted) {
+    const entry =
+      profileLine(userId, profiles.get(userId));
+
+    const extraLength =
+      entry.length + (lines.length > 0 ? 2 : 0);
+
+    if (
+      currentLength + extraLength >
+      maxLength - 60
+    ) {
+      hiddenCount += 1;
+      continue;
+    }
+
+    lines.push(entry);
+    currentLength += extraLength;
   }
+
+  let value = lines.join("\n\n");
+
+  if (hiddenCount > 0) {
+    value +=
+      `\n\n…and **${hiddenCount} more** ` +
+      "not shown because of Discord's embed limit.";
+  }
+
+  return {
+    name:
+      `${icon} ${title} (${userIds.length})`,
+    value,
+    inline: false
+  };
 }
 
 module.exports = {
@@ -327,12 +236,16 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName("viewstatus")
     .setDescription(
-      "View whitelisted, blacklisted, and permanent Roblox users."
+      "View all saved Roblox access statuses."
     ),
 
   async execute(interaction) {
+    /*
+     * Public response:
+     * Everyone in the channel can see it.
+     */
     await interaction.deferReply({
-      ephemeral: true
+      ephemeral: false
     });
 
     const status = readStatusDatabase();
@@ -343,66 +256,46 @@ module.exports = {
       ...status.permanent
     ]);
 
-    const [profiles, thumbnails] =
-      await Promise.all([
-        fetchRobloxProfiles(allUserIds),
-        fetchRobloxThumbnails(allUserIds)
-      ]);
+    const profiles =
+      await fetchRobloxProfiles(allUserIds);
 
-    const summaryEmbed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
       .setColor(0x1FB8F0)
-      .setTitle("Sweet TP User Status")
+      .setTitle("📊 Sweet TP User Status")
       .setDescription(
-        "Roblox access records currently saved by the bot."
+        "Current Roblox access records saved by the bot.\n\n" +
+        `🟢 **Whitelisted:** ${status.whitelisted.length}\n` +
+        `⭐ **Permanent Access:** ${status.permanent.length}\n` +
+        `🔴 **Blacklisted:** ${status.blacklisted.length}`
       )
       .addFields(
-        {
-          name: "Whitelisted",
-          value: String(status.whitelisted.length),
-          inline: true
-        },
-        {
-          name: "Blacklisted",
-          value: String(status.blacklisted.length),
-          inline: true
-        },
-        {
-          name: "Permanent Access",
-          value: String(status.permanent.length),
-          inline: true
-        }
+        buildSection({
+          title: "Whitelisted",
+          icon: "🟢",
+          userIds: status.whitelisted,
+          profiles
+        }),
+        buildSection({
+          title: "Permanent Access",
+          icon: "⭐",
+          userIds: status.permanent,
+          profiles
+        }),
+        buildSection({
+          title: "Blacklisted",
+          icon: "🔴",
+          userIds: status.blacklisted,
+          profiles
+        })
       )
+      .setFooter({
+        text:
+          "Sweet TP Manager • Public status dashboard"
+      })
       .setTimestamp();
 
     await interaction.editReply({
-      embeds: [summaryEmbed]
-    });
-
-    await sendCategory({
-      interaction,
-      category: "Whitelisted",
-      userIds: status.whitelisted,
-      profiles,
-      thumbnails,
-      color: 0x1FB8F0
-    });
-
-    await sendCategory({
-      interaction,
-      category: "Blacklisted",
-      userIds: status.blacklisted,
-      profiles,
-      thumbnails,
-      color: 0xEE2D37
-    });
-
-    await sendCategory({
-      interaction,
-      category: "Permanent Access",
-      userIds: status.permanent,
-      profiles,
-      thumbnails,
-      color: 0x64FF78
+      embeds: [embed]
     });
   }
 };
