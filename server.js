@@ -109,21 +109,20 @@ function readUsersDatabase() {
 function getAccessListStatus(robloxUserId) {
   const users = readUsersDatabase();
 
+  const blocked =
+    users.blacklisted.includes(
+      robloxUserId
+    );
+
   return {
-    allowedToRedeem:
-      users.redeemAllowed.includes(
-        robloxUserId
-      ),
+    allowedToRedeem: !blocked,
 
     permanentlyWhitelisted:
       users.permanent.includes(
         robloxUserId
       ),
 
-    blacklisted:
-      users.blacklisted.includes(
-        robloxUserId
-      )
+    blacklisted: blocked
   };
 }
 
@@ -233,7 +232,7 @@ app.post("/redeem", (req, res) => {
       success: false,
       blacklisted: true,
       message:
-        "This Roblox user is permanently blacklisted."
+        "You are blacklisted and cannot redeem keys."
     });
   }
 
@@ -252,16 +251,6 @@ app.post("/redeem", (req, res) => {
     });
   }
 
-  if (!permanentStatus.allowedToRedeem) {
-    return res.status(403).json({
-      success: false,
-      permanentlyWhitelisted: false,
-      allowedToRedeem: false,
-      blacklisted: false,
-      message:
-        "You are not whitelisted to redeem a key."
-    });
-  }
 
   const database = readKeysDatabase();
 
