@@ -2,9 +2,9 @@ const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
 const { readKeys } = require("./lib/keyStore");
 
 // Discord embeds cap out at 25 fields. Each key uses 3 fields here (key,
-// second column, and a blank spacer field so rows line up cleanly), so
-// this is the most keys that safely fit in a single embed.
-const MAX_KEYS_PER_EMBED = 8;
+// user, and a blank spacer field so rows line up cleanly), so this is
+// the most keys that safely fit in a single embed.
+const MAX_KEYS_SHOWN = 8;
 
 const usernameCache = new Map();
 
@@ -26,50 +26,16 @@ async function getRobloxUsername(userId) {
   }
 }
 
-// Builds one static (non-paginated) embed for a category. secondColumn is
-// an async function (key) => string used for the right-hand column.
-async function buildCategoryEmbed({
-  categoryKeys,
-  label,
-  icon,
-  color,
-  secondColumnLabel,
-  secondColumn
-}) {
-  const embed = new EmbedBuilder()
-    .setColor(color)
-    .setTitle(`${icon} ${label} Keys (${categoryKeys.length})`)
-    .setTimestamp();
+function statusIcon(key, now) {
+  if (key.paused === true) return key.pausedLocked ? "⏸️🔒" : "⏸️";
+  if (key.redeemed === true && Number(key.expiresAt) > now) return "🟢";
+  return "🟡";
+}
 
-  if (categoryKeys.length === 0) {
-    embed.setDescription(`No ${label.toLowerCase()} keys right now.`);
-    return embed;
-  }
-
-  const shown = categoryKeys.slice(0, MAX_KEYS_PER_EMBED);
-  const hiddenCount = categoryKeys.length - shown.length;
-
-  for (const key of shown) {
-    const keyLabel = key.pausedLocked
-      ? `🔒 \`${key.key}\``
-      : `\`${key.key}\``;
-
-    embed.addFields(
-      { name: "🔑 Key", value: keyLabel, inline: true },
-      { name: secondColumnLabel, value: await secondColumn(key), inline: true },
-      // Blank spacer field so each key's 2 columns get their own full
-      // row instead of bleeding into the next key's fields.
-      { name: "\u200b", value: "\u200b", inline: true }
-    );
-  }
-
-  if (hiddenCount > 0) {
-    embed.setDescription(
-      `+${hiddenCount} more not shown (Discord's embed limit).`
-    );
-  }
-
-  return embed;
+function statusRank(key, now) {
+  if (key.redeemed === true && key.paused !== true && Number(key.expiresAt) > now) return 0; // active
+  if (key.paused === true) return 1; // paused
+  return 2; // unused
 }
 
 module.exports = {
@@ -77,7 +43,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("keylist")
-    .setDescription("View Active/Paused/Unused Sweet TP keys."),
+    .setDescription("View every Sweet TP key in one list."),
 
   async execute(interaction) {
     await interaction.deferReply();
@@ -85,53 +51,54 @@ module.exports = {
     const database = readKeys();
     const now = Date.now();
 
-    const sorted = [...database.keys].sort(
-      (a, b) => Number(b.created || 0) - Number(a.created || 0)
-    );
-
-    const activeKeys = sorted.filter(
-      key => key.redeemed === true && key.paused !== true && Number(key.expiresAt) > now
-    );
-
-    const pausedKeys = sorted.filter(key => key.paused === true);
-
-    const unusedKeys = sorted.filter(key => key.redeemed !== true);
-
-    const userColumn = async key => {
-      const user = await getRobloxUsername(key.redeemedBy);
-      const id = key.redeemedBy ? `\`${key.redeemedBy}\`` : "—";
-      return `${user}\n${id}`;
-    };
-
-    const activeEmbed = await buildCategoryEmbed({
-      categoryKeys: activeKeys,
-      label: "Active",
-      icon: "🟢",
-      color: 0x2ecc71,
-      secondColumnLabel: "👤 User",
-      secondColumn: userColumn
+    const sorted = [...database.keys].sort((a, b) => {
+      const rankDiff = statusRank(a, now) - statusRank(b, now);
+      if (rankDiff !== 0) return rankDiff;
+      return Number(b.created || 0) - Number(a.created || 0);
     });
 
-    const pausedEmbed = await buildCategoryEmbed({
-      categoryKeys: pausedKeys,
-      label: "Paused",
-      icon: "⏸️",
-      color: 0xf1c40f,
-      secondColumnLabel: "👤 User",
-      secondColumn: userColumn
-    });
+    const activeCount = sorted.filter(k => statusRank(k, now) === 0).length;
+    const pausedCount = sorted.filter(k => statusRank(k, now) === 1).length;
+    const unusedCount = sorted.filter(k => statusRank(k, now) === 2).length;
 
-    const unusedEmbed = await buildCategoryEmbed({
-      categoryKeys: unusedKeys,
-      label: "Unused",
-      icon: "🟡",
-      color: 0x95a5a6,
-      secondColumnLabel: "⏱️ Duration",
-      secondColumn: key => `${Number(key.minutes) || 0}m after redemption`
-    });
+    const embed = new EmbedBuilder()
+      .setColor(0x1fb8f0)
+      .setTitle(`🔑 Sweet TP Key List (${sorted.length})`)
+      .setDescription(
+        `🟢 **${activeCount} Active**  •  ⏸️ **${pausedCount} Paused**  •  🟡 **${unusedCount} Unused**`
+      )
+      .setTimestamp();
+
+    if (sorted.length === 0) {
+      embed.addFields({ name: "No keys found", value: "Generate one with `/generatekey`." });
+    } else {
+      const shown = sorted.slice(0, MAX_KEYS_SHOWN);
+      const hiddenCount = sorted.length - shown.length;
+
+      for (const key of shown) {
+        const keyLabel = `${statusIcon(key, now)} \`${key.key}\``;
+        const user = await getRobloxUsername(key.redeemedBy);
+        const userId = key.redeemedBy ? `\`${key.redeemedBy}\`` : "—";
+
+        embed.addFields(
+          { name: "🔑 Key", value: keyLabel, inline: true },
+          { name: "👤 User", value: `${user}\n${userId}`, inline: true },
+          // Blank spacer field so each key's 2 columns get a full row
+          // instead of bleeding into the next key's fields.
+          { name: "\u200b", value: "\u200b", inline: true }
+        );
+      }
+
+      if (hiddenCount > 0) {
+        embed.addFields({
+          name: "\u200b",
+          value: `+${hiddenCount} more not shown (Discord's embed limit).`
+        });
+      }
+    }
 
     await interaction.editReply({
-      embeds: [activeEmbed, pausedEmbed, unusedEmbed]
+      embeds: [embed]
     });
   }
 };
