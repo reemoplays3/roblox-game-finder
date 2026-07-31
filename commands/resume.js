@@ -5,8 +5,8 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("resumekeys")
-    .setDescription("Resumes all paused redeemed keys"),
+    .setName("resume")
+    .setDescription("Resumes every paused key and clears any /pause lock"),
 
   async execute(interaction) {
     const database = readKeys();
@@ -29,6 +29,10 @@ module.exports = {
         item.pausedAt = null;
         item.pausedRemainingSeconds = 0;
 
+        // This is the official admin override — clears any lock set by
+        // /pause so the key can actually resume.
+        item.pausedLocked = false;
+
         resumedCount++;
       }
     }
@@ -38,7 +42,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle("Keys Resumed")
       .setDescription(
-        `${resumedCount} paused key(s) were resumed.`
+        `${resumedCount} paused key(s) were resumed. Everything is back to normal.`
       )
       .setTimestamp();
 

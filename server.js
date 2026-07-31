@@ -438,6 +438,16 @@ app.post("/resume-time", (req, res) => {
     });
   }
 
+  // A key paused via the admin /pause command is locked — the player
+  // can't resume it themselves. Only an admin running /resume in Discord
+  // clears this lock.
+  if (pausedKey.pausedLocked === true) {
+    return res.status(403).json({
+      success: false,
+      message: "Your time has been locked by an admin. Please wait."
+    });
+  }
+
   const now = Date.now();
   const remainingSeconds = Math.floor(
     Number(pausedKey.pausedRemainingSeconds)

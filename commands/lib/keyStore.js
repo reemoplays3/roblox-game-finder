@@ -80,6 +80,9 @@ function makeKeyString() {
 // what server.js's /redeem, /pause-time, /resume-time, /validate, and
 // /user-status routes actually read and write — in particular
 // "pausedRemainingSeconds" (seconds), not "remainingMs" (milliseconds).
+// "pausedLocked" marks a key paused by the admin /pause command — the
+// live website's /resume-time route checks this and refuses to let the
+// player self-resume until an admin clears it with /resumekeys.
 function makeKeyEntry(minutes) {
   return {
     key: makeKeyString(),
@@ -94,6 +97,7 @@ function makeKeyEntry(minutes) {
     paused: false,
     pausedAt: null,
     pausedRemainingSeconds: null,
+    pausedLocked: false,
 
     revoked: false,
     revokedAt: null
