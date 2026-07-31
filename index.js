@@ -7,16 +7,65 @@ const {
   Client,
   Collection,
   Events,
-  GatewayIntentBits
+  GatewayIntentBits,
+  EmbedBuilder
 } = require("discord.js");
 
 const client = new Client({
   intents: [
-    GatewayIntentBits.Guilds
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
 client.commands = new Collection();
+
+const BUYER_ROLE_NAME = "Buyer";
+
+// Gives the Discord "Buyer" role to a Discord user. Used both by the
+// instant-grant path (redeeming a key that /keysend linked to someone)
+// and by the Accept button on staff-approval requests below.
+async function grantBuyerRole(discordUserId) {
+  if (!discordUserId) {
+    return { success: false, message: "No Discord ID provided." };
+  }
+
+  if (!client.isReady()) {
+    return { success: false, message: "The bot isn't ready yet. Try again in a moment." };
+  }
+
+  try {
+    const guild = await client.guilds.fetch(process.env.GUILD_ID);
+
+    let member;
+    try {
+      member = await guild.members.fetch(discordUserId);
+    } catch (_fetchError) {
+      return {
+        success: false,
+        message: "That Discord ID couldn't be found in the server."
+      };
+    }
+
+    const role = guild.roles.cache.find(r => r.name === BUYER_ROLE_NAME);
+
+    if (!role) {
+      console.warn(`Could not find a role named "${BUYER_ROLE_NAME}" in the server.`);
+      return { success: false, message: `The "${BUYER_ROLE_NAME}" role isn't set up yet.` };
+    }
+
+    if (member.roles.cache.has(role.id)) {
+      return { success: true, message: "Already had the Buyer role." };
+    }
+
+    await member.roles.add(role);
+    console.log(`Granted Buyer role to Discord user ${discordUserId}`);
+    return { success: true, message: "Buyer role granted!" };
+  } catch (error) {
+    console.error(`Could not grant Buyer role to ${discordUserId}:`, error);
+    return { success: false, message: "Something went wrong granting the role." };
+  }
+}
 
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
@@ -40,6 +89,44 @@ client.once(Events.ClientReady, readyClient => {
 });
 
 client.on(Events.InteractionCreate, async interaction => {
+  if (interaction.isButton() && interaction.customId.startsWith("buyerrole_")) {
+    const [, action, discordUserId] = interaction.customId.split("_");
+
+    await interaction.deferUpdate();
+
+    const originalEmbed = interaction.message.embeds[0];
+    const updatedEmbed = originalEmbed
+      ? EmbedBuilder.from(originalEmbed)
+      : new EmbedBuilder();
+
+    if (action === "accept") {
+      const result = await grantBuyerRole(discordUserId);
+
+      updatedEmbed
+        .setColor(result.success ? 0x57f287 : 0xed4245)
+        .addFields({
+          name: result.success ? "✅ Accepted" : "⚠️ Accept Failed",
+          value: `${result.message} — by <@${interaction.user.id}>`
+        });
+    } else if (action === "decline") {
+      updatedEmbed
+        .setColor(0xed4245)
+        .addFields({
+          name: "❌ Declined",
+          value: `Declined by <@${interaction.user.id}>`
+        });
+    } else {
+      return;
+    }
+
+    await interaction.message.edit({
+      embeds: [updatedEmbed],
+      components: []
+    });
+
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
 
   const command = interaction.client.commands.get(
@@ -82,3 +169,8 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+// Exported so server.js (which requires this file to start the bot) can
+// also use the same live client instance and the shared grantBuyerRole
+// helper — e.g. to grant Discord roles when a key gets redeemed in-game.
+module.exports = { client, grantBuyerRole };

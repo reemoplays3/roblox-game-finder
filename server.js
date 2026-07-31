@@ -1,4 +1,4 @@
-const discordClient = require("./index.js");
+const { client: discordClient, grantBuyerRole } = require("./index.js");
 require("./deploy-commands.js");
 
 const express = require("express");
@@ -30,63 +30,60 @@ app.use(
   })
 );
 
-const BUYER_ROLE_NAME = "Buyer";
+const BUYER_REQUEST_CHANNEL_ID = "1532850460552069281";
+const BUYER_REQUEST_COOLDOWN_MS = 5 * 60 * 1000;
 
-// Gives the Discord "Buyer" role to whoever /keysend originally sent
-// this key to. Does nothing (safely) if the key wasn't sent via
-// /keysend, if the bot isn't logged in yet, if the role doesn't exist,
-// or if the person already has the role. This never blocks or fails the
-// actual redemption — it's best-effort on top of it.
-async function grantBuyerRole(discordUserId) {
-  if (!discordUserId) {
-    return { success: false, message: "No Discord ID provided." };
-  }
-
+// Posts a Buyer Role request to the staff channel with Accept/Decline
+// buttons. The actual button-click handling (and the role grant itself)
+// lives in index.js, since that's where the bot listens for interactions.
+async function postBuyerRoleRequest({ robloxUserId, robloxUsername, discordUserId }) {
   if (!discordClient.isReady()) {
-    console.warn(
-      "Discord client not ready yet — skipping Buyer role grant for",
-      discordUserId
-    );
-    return { success: false, message: "The bot isn't ready yet. Try again in a moment." };
+    return false;
   }
 
   try {
-    const guild = await discordClient.guilds.fetch(process.env.GUILD_ID);
-
-    let member;
-    try {
-      member = await guild.members.fetch(discordUserId);
-    } catch (_fetchError) {
-      return {
-        success: false,
-        message: "That Discord ID couldn't be found in the server. Make sure you've joined and typed your ID correctly."
-      };
+    const channel = await discordClient.channels.fetch(BUYER_REQUEST_CHANNEL_ID);
+    if (!channel) {
+      return false;
     }
 
-    const role = guild.roles.cache.find(
-      r => r.name === BUYER_ROLE_NAME
+    const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+
+    const embed = new EmbedBuilder()
+      .setTitle("🛒 Buyer Role Request")
+      .setColor(0x1fb8f0)
+      .addFields(
+        {
+          name: "Roblox User",
+          value: robloxUsername
+            ? `${robloxUsername} (\`${robloxUserId}\`)`
+            : `\`${robloxUserId}\``,
+          inline: true
+        },
+        {
+          name: "Discord User",
+          value: `<@${discordUserId}> (\`${discordUserId}\`)`,
+          inline: true
+        }
+      )
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`buyerrole_accept_${discordUserId}`)
+        .setLabel("Accept")
+        .setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId(`buyerrole_decline_${discordUserId}`)
+        .setLabel("Decline")
+        .setStyle(ButtonStyle.Danger)
     );
 
-    if (!role) {
-      console.warn(
-        `Could not find a role named "${BUYER_ROLE_NAME}" in the server.`
-      );
-      return { success: false, message: "The Buyer role isn't set up yet — contact an admin." };
-    }
-
-    if (member.roles.cache.has(role.id)) {
-      return { success: true, message: "You already have the Buyer role!" };
-    }
-
-    await member.roles.add(role);
-    console.log(`Granted Buyer role to Discord user ${discordUserId}`);
-    return { success: true, message: "Buyer role granted! Check your Discord roles." };
+    await channel.send({ embeds: [embed], components: [row] });
+    return true;
   } catch (error) {
-    console.error(
-      `Could not grant Buyer role to ${discordUserId}:`,
-      error
-    );
-    return { success: false, message: "Something went wrong granting the role. Try again later." };
+    console.error("Could not post Buyer role request:", error);
+    return false;
   }
 }
 
@@ -700,8 +697,9 @@ app.post("/user-status", (req, res) => {
   });
 });
 
-app.post("/grant-buyer-role", async (req, res) => {
+app.post("/request-buyer-role", async (req, res) => {
   const robloxUserId = String(req.body.robloxUserId || "").trim();
+  const robloxUsername = String(req.body.robloxUsername || "").trim();
   const discordUserId = String(req.body.discordUserId || "").trim();
 
   if (!robloxUserId) {
@@ -723,7 +721,7 @@ app.post("/grant-buyer-role", async (req, res) => {
   if (permanentStatus.blacklisted) {
     return res.status(403).json({
       success: false,
-      message: "You are blacklisted and can't claim the role."
+      message: "You are blacklisted and can't request the role."
     });
   }
 
@@ -732,7 +730,8 @@ app.post("/grant-buyer-role", async (req, res) => {
 
   // The one key currently holding this person's real active/paused time
   // (same lookup logic used elsewhere) — this is the ONLY thing that
-  // qualifies someone for the role here, regardless of permanent access.
+  // qualifies someone to request the role here, regardless of permanent
+  // access.
   const holderKey = database.keys.find(item =>
     String(item.redeemedBy || "") === robloxUserId &&
     !item.revoked &&
@@ -745,17 +744,49 @@ app.post("/grant-buyer-role", async (req, res) => {
   if (!holderKey) {
     return res.status(404).json({
       success: false,
-      message: "You need an active or paused key to claim the Buyer role."
+      message: "You need an active or paused key to request the Buyer role."
     });
   }
 
-  // Remember this link for the future (e.g. if the role ever needs to
-  // be re-granted, or for consistency with keys sent via /keysend).
+  // Cooldown is stored ON the key itself (not in memory), so it survives
+  // redeploys and restarts just like everything else in keys.json.
+  const lastRequestedAt = Number(holderKey.buyerRoleRequestedAt) || 0;
+  const elapsed = now - lastRequestedAt;
+
+  if (lastRequestedAt && elapsed < BUYER_REQUEST_COOLDOWN_MS) {
+    const remainingSeconds = Math.ceil((BUYER_REQUEST_COOLDOWN_MS - elapsed) / 1000);
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    return res.status(429).json({
+      success: false,
+      message: `Please wait ${minutes}m ${seconds}s before requesting again.`
+    });
+  }
+
+  holderKey.buyerRoleRequestedAt = now;
+  // Remember this link for the future (e.g. consistency with keys sent
+  // via /keysend).
   holderKey.discordUserId = discordUserId;
   writeKeysDatabase(database);
 
-  const result = await grantBuyerRole(discordUserId);
-  return res.json(result);
+  const posted = await postBuyerRoleRequest({
+    robloxUserId,
+    robloxUsername,
+    discordUserId
+  });
+
+  if (!posted) {
+    return res.status(500).json({
+      success: false,
+      message: "Could not reach the staff channel. Try again later."
+    });
+  }
+
+  return res.json({
+    success: true,
+    message: "Request sent to staff — you'll get the role once it's approved."
+  });
 });
 
 app.listen(PORT, () => {
