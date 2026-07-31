@@ -12,7 +12,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("keysend")
-    .setDescription("Delivers an existing key to a Discord user")
+    .setDescription("DMs an existing key to a Discord user")
     .addStringOption(option =>
       option
         .setName("key")
@@ -63,7 +63,7 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(0x1fb8f0)
       .setDescription(
-        `👋 Hello <@${targetUser.id}>\n\n` +
+        `👋 Hello!\n\n` +
           `Here is your **${formatDuration(foundKey.minutes)}** key:\n` +
           `\`${foundKey.key}\`\n\n` +
           `1. Join the game https://discord.com/channels/1530340937451180162/1530351666245931078\n` +
@@ -71,9 +71,25 @@ module.exports = {
           `3. Enter your key and redeem!`
       );
 
+    try {
+      await targetUser.send({ embeds: [embed] });
+    } catch (error) {
+      console.error(
+        `Could not DM key to ${targetUser.id}:`,
+        error
+      );
+
+      return interaction.reply({
+        content:
+          `Could not DM <@${targetUser.id}> — they may have their ` +
+          `DMs turned off. The key was NOT sent.`,
+        ephemeral: true
+      });
+    }
+
     await interaction.reply({
-      content: `<@${targetUser.id}>`,
-      embeds: [embed]
+      content: `✅ Sent the key to <@${targetUser.id}> via DM.`,
+      ephemeral: true
     });
   }
 };
