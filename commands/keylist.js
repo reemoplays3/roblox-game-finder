@@ -1,5 +1,3 @@
-const fs = require("fs");
-const path = require("path");
 const {
   SlashCommandBuilder,
   EmbedBuilder,
@@ -7,35 +5,11 @@ const {
   ButtonBuilder,
   ButtonStyle
 } = require("discord.js");
+const { readKeys } = require("./lib/keyStore");
 
-const keysPath = path.join(process.cwd(), "data", "keys.json");
-const KEYS_PER_PAGE = 3;
+const KEYS_PER_PAGE = 7;
 const UPDATE_EVERY_MS = 60_000;
 const LIVE_FOR_MS = 6 * 60 * 60 * 1000;
-
-function readDatabase() {
-  try {
-    const database = JSON.parse(fs.readFileSync(keysPath, "utf8"));
-    if (!Array.isArray(database.keys)) database.keys = [];
-    return database;
-  } catch (error) {
-    console.error("Could not read keys.json:", error);
-    return { keys: [] };
-  }
-}
-
-function writeDatabase(database) {
-  fs.mkdirSync(path.dirname(keysPath), { recursive: true });
-  fs.writeFileSync(keysPath, JSON.stringify(database, null, 2), "utf8");
-}
-
-function removeRevokedKeys(database) {
-  const before = database.keys.length;
-  database.keys = database.keys.filter(key => key.revoked !== true);
-  const removed = before - database.keys.length;
-  if (removed > 0) writeDatabase(database);
-  return removed;
-}
 
 function formatDuration(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
@@ -84,8 +58,9 @@ async function getRobloxUsername(userId, cache) {
 }
 
 async function buildPage(page, usernameCache) {
-  const database = readDatabase();
-  removeRevokedKeys(database);
+  // readKeys() already prunes revoked/fully-expired keys on every call —
+  // no separate cleanup step needed here anymore.
+  const database = readKeys();
 
   const now = Date.now();
   const keys = [...database.keys].sort((a, b) => {
@@ -116,13 +91,28 @@ async function buildPage(page, usernameCache) {
     for (const key of pageKeys) {
       const state = getKeyState(key, now);
       const user = await getRobloxUsername(key.redeemedBy, usernameCache);
-      embed.addFields({
-        name: `${state.icon} ${state.name} • ${String(key.key || "Unknown Key")}`,
-        value:
-          `⏱️ **Time:** ${state.remaining}\n` +
-          `👤 **User:** ${user}\n` +
-          `🆔 **User ID:** ${key.redeemedBy ? `\`${key.redeemedBy}\`` : "—"}`
-      });
+      const userId = key.redeemedBy ? `\`${key.redeemedBy}\`` : "—";
+
+      // Three inline fields per key = one row with three columns
+      // (Discord auto-wraps inline fields 3-per-row, so this lines up
+      // as Key | Time | User for every key in the list).
+      embed.addFields(
+        {
+          name: "🔑 Key",
+          value: `${state.icon} \`${key.key}\`\n${state.name}`,
+          inline: true
+        },
+        {
+          name: "⏱️ Time",
+          value: state.remaining,
+          inline: true
+        },
+        {
+          name: "👤 User",
+          value: `${user}\n${userId}`,
+          inline: true
+        }
+      );
     }
   }
 
@@ -143,7 +133,7 @@ module.exports = {
     .setDescription("View all current Sweet TP keys."),
 
   async execute(interaction) {
-    await interaction.deferReply(); 
+    await interaction.deferReply();
 
     let currentPage = 0;
     const usernameCache = new Map();

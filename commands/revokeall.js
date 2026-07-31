@@ -1,47 +1,31 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const fs = require("fs");
-const path = require("path");
-
-const dataPath = path.join(__dirname, "..", "data", "keys.json");
+const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
     .setName("revokeall")
-    .setDescription("Revokes every key"),
+    .setDescription("Revokes and permanently deletes every key"),
 
   async execute(interaction) {
-    const database = JSON.parse(
-      fs.readFileSync(dataPath, "utf8")
-    );
+    const database = readKeys();
+    const revokedCount = database.keys.length;
 
-    let revokedCount = 0;
-
-    for (const key of database.keys) {
-      if (!key.revoked) {
-        key.revoked = true;
-        key.revokedAt = Date.now();
-        revokedCount++;
-      }
-    }
-
-    fs.writeFileSync(
-      dataPath,
-      JSON.stringify(database, null, 2)
-    );
+    database.keys = [];
+    writeKeys(database);
 
     const embed = new EmbedBuilder()
-      .setTitle("All Keys Revoked")
+      .setTitle("All Keys Revoked & Deleted")
       .setDescription(
         revokedCount === 0
-          ? "Every key was already revoked."
-          : `Revoked **${revokedCount}** key(s).`
+          ? "There were no keys to revoke."
+          : `Permanently deleted **${revokedCount}** key(s).`
       )
       .setTimestamp();
 
     await interaction.reply({
-  embeds: [embed]
-});
+      embeds: [embed]
+    });
   }
 };
