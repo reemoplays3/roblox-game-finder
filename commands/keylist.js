@@ -7,7 +7,6 @@ const { readKeys } = require("./lib/keyStore");
 const MAX_KEYS_SHOWN = 8;
 
 const UPDATE_EVERY_MS = 30_000;
-const LIVE_FOR_MS = 6 * 60 * 60 * 1000;
 
 const usernameCache = new Map();
 
@@ -43,7 +42,7 @@ function statusRank(key, now) {
   return 2;
 }
 
-async function buildEmbed(liveUpdatesEnded) {
+async function buildEmbed() {
   const database = readKeys();
   const now = Date.now();
 
@@ -63,11 +62,7 @@ async function buildEmbed(liveUpdatesEnded) {
     .setDescription(
       `🟢 **${activeCount} Active**  •  ⏸️ **${pausedCount} Paused**  •  🟡 **${unusedCount} Unused**`
     )
-    .setFooter({
-      text: liveUpdatesEnded
-        ? "Live updates ended"
-        : "Updates every 30 seconds"
-    })
+    .setFooter({ text: "Updates every 30 seconds" })
     .setTimestamp();
 
   if (sorted.length === 0) {
@@ -112,26 +107,21 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply();
 
-    const firstEmbed = await buildEmbed(false);
-    await interaction.editReply({ embeds: [firstEmbed] });
+    const firstEmbed = await buildEmbed();
 
-    const updateInterval = setInterval(async () => {
+    // Editing through the interaction only works for ~15 minutes before
+    // Discord expires the token. Grabbing the actual Message object here
+    // and calling message.edit() on it from now on uses the bot's normal
+    // channel permissions instead, so it can keep refreshing forever.
+    const message = await interaction.editReply({ embeds: [firstEmbed] });
+
+    setInterval(async () => {
       try {
-        const embed = await buildEmbed(false);
-        await interaction.editReply({ embeds: [embed] });
+        const embed = await buildEmbed();
+        await message.edit({ embeds: [embed] });
       } catch (error) {
         console.error("Could not refresh /keylist:", error);
       }
     }, UPDATE_EVERY_MS);
-
-    setTimeout(async () => {
-      clearInterval(updateInterval);
-      try {
-        const embed = await buildEmbed(true);
-        await interaction.editReply({ embeds: [embed] });
-      } catch (error) {
-        console.error("Could not close out /keylist:", error);
-      }
-    }, LIVE_FOR_MS);
   }
 };
