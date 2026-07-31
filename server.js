@@ -254,9 +254,11 @@ app.post("/redeem", (req, res) => {
 
   const database = readKeysDatabase();
 
-  const foundKey = database.keys.find(
+  const foundKeyIndex = database.keys.findIndex(
     item => item.key === enteredKey
   );
+
+  const foundKey = database.keys[foundKeyIndex];
 
   if (!foundKey) {
     return res.status(404).json({
@@ -298,28 +300,64 @@ app.post("/redeem", (req, res) => {
 
   const now = Date.now();
 
-  foundKey.redeemed = true;
-  foundKey.redeemedBy = robloxUserId;
-  foundKey.redeemedAt = now;
-  foundKey.expiresAt =
-    now + minutes * 60 * 1000;
-  foundKey.paused = false;
-  foundKey.pausedRemainingSeconds = 0;
+  // Does this same person already have another key of theirs currently
+  // active or paused? If so, this new key's time gets added onto that
+  // one instead of starting its own separate countdown.
+  const currentHolder = database.keys.find(item =>
+    item !== foundKey &&
+    String(item.redeemedBy || "") === robloxUserId &&
+    !item.revoked &&
+    (
+      (item.paused === true && Number(item.pausedRemainingSeconds) > 0) ||
+      (item.paused !== true && Number(item.expiresAt) > now)
+    )
+  );
+
+  let totalRemainingSeconds;
+  let responseExpiresAt = null;
+  let mergedIntoExisting = false;
+
+  if (currentHolder) {
+    mergedIntoExisting = true;
+
+    if (currentHolder.paused === true) {
+      currentHolder.pausedRemainingSeconds =
+        (Number(currentHolder.pausedRemainingSeconds) || 0) +
+        minutes * 60;
+      totalRemainingSeconds = currentHolder.pausedRemainingSeconds;
+    } else {
+      currentHolder.expiresAt =
+        Number(currentHolder.expiresAt) + minutes * 60 * 1000;
+      totalRemainingSeconds = Math.floor(
+        (currentHolder.expiresAt - now) / 1000
+      );
+      responseExpiresAt = currentHolder.expiresAt;
+    }
+
+    // This key's only job was handing its time to the existing holder —
+    // remove it instead of leaving a redeemed-but-empty row behind.
+    database.keys.splice(foundKeyIndex, 1);
+  } else {
+    foundKey.redeemed = true;
+    foundKey.redeemedBy = robloxUserId;
+    foundKey.redeemedAt = now;
+    foundKey.expiresAt = now + minutes * 60 * 1000;
+    foundKey.paused = false;
+    foundKey.pausedRemainingSeconds = 0;
+
+    totalRemainingSeconds = minutes * 60;
+    responseExpiresAt = foundKey.expiresAt;
+  }
 
   writeKeysDatabase(database);
 
   return res.json({
     success: true,
-    message:
-      "Key redeemed successfully.",
-    expiresAt:
-      foundKey.expiresAt,
-    remainingSeconds: Math.floor(
-      (
-        foundKey.expiresAt -
-        now
-      ) / 1000
-    ),
+    message: mergedIntoExisting
+      ? `Key redeemed successfully. ${minutes} minute(s) added to your existing time.`
+      : "Key redeemed successfully.",
+    expiresAt: responseExpiresAt,
+    remainingSeconds: totalRemainingSeconds,
     hasRedeemedBefore: true,
     hasActiveKey: true,
     allowedToRedeem: true,
