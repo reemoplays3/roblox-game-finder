@@ -1,8 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const fs = require("fs");
-const path = require("path");
-
-const dataPath = path.join(__dirname, "..", "data", "keys.json");
+const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
   ownerOnly: true,
@@ -12,9 +9,7 @@ module.exports = {
     .setDescription("Resumes all paused redeemed keys"),
 
   async execute(interaction) {
-    const database = JSON.parse(
-      fs.readFileSync(dataPath, "utf8")
-    );
+    const database = readKeys();
 
     const now = Date.now();
     let resumedCount = 0;
@@ -24,23 +19,21 @@ module.exports = {
         item.redeemed &&
         !item.revoked &&
         item.paused &&
-        item.remainingMs &&
-        item.remainingMs > 0;
+        item.pausedRemainingSeconds &&
+        item.pausedRemainingSeconds > 0;
 
       if (canResume) {
-        item.expiresAt = now + item.remainingMs;
+        item.expiresAt =
+          now + item.pausedRemainingSeconds * 1000;
         item.paused = false;
         item.pausedAt = null;
-        item.remainingMs = null;
+        item.pausedRemainingSeconds = 0;
 
         resumedCount++;
       }
     }
 
-    fs.writeFileSync(
-      dataPath,
-      JSON.stringify(database, null, 2)
-    );
+    writeKeys(database);
 
     const embed = new EmbedBuilder()
       .setTitle("Keys Resumed")

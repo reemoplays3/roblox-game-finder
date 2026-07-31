@@ -10,11 +10,11 @@ const PORT = process.env.PORT || 3000;
 
 const keysPath = path.join(process.cwd(), "data", "keys.json");
 
-const usersPath = path.join(
-  __dirname,
-  "data",
-  "users.json"
-);
+// Was previously path.join(__dirname, "data", "users.json") — different
+// method than keysPath used. They currently resolve to the same folder,
+// but keeping both paths built the same way avoids that ever silently
+// drifting apart if the start command or folder layout changes.
+const usersPath = path.join(process.cwd(), "data", "users.json");
 
 app.use(express.json());
 
