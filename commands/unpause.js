@@ -5,7 +5,7 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("resume")
+    .setName("unpause")
     .setDescription("Removes the /pause lock from every paused key (players still resume their own time in-game)"),
 
   async execute(interaction) {
@@ -31,6 +31,7 @@ module.exports = {
     writeKeys(database);
 
     await interaction.reply({
+      ephemeral: true,
       content:
         unlockedCount === 0
           ? "🔓 There were no locked keys to unlock."

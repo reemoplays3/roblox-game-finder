@@ -37,6 +37,7 @@ module.exports = {
     writeKeys(database);
 
     await interaction.reply({
+      ephemeral: true,
       content: `🗑️ Key \`${removedKey.key}\` was revoked.`
     });
   }

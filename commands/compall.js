@@ -44,6 +44,7 @@ module.exports = {
     }
 
     await interaction.reply({
+      ephemeral: true,
       content:
         updatedCount === 0
           ? "🎁 No active or paused keys were found to add time to."

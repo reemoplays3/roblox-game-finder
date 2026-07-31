@@ -35,8 +35,13 @@ module.exports = {
         item.pausedAt = now;
         item.expiresAt = null;
         item.pausedLocked = true;
+        item.pausedByAdmin = true;
         lockedCount++;
       } else if (isAlreadyPaused) {
+        // Already paused by the player before this command ran — just
+        // lock it in place. Deliberately NOT setting pausedByAdmin here,
+        // so /resume knows this one wasn't force-paused and should stay
+        // paused (just unlocked) instead of being forced back to running.
         item.pausedLocked = true;
         lockedCount++;
       }
@@ -47,6 +52,7 @@ module.exports = {
     }
 
     await interaction.reply({
+      ephemeral: true,
       content:
         lockedCount === 0
           ? "🛑 No active or paused keys were found to lock."

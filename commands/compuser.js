@@ -71,6 +71,7 @@ module.exports = {
     writeKeys(database);
 
     await interaction.reply({
+      ephemeral: true,
       content: `🎁 Added ${minutes} minute(s) to \`${robloxUserId}\`'s key.`
     });
   }

@@ -63,6 +63,7 @@ module.exports = {
     }
 
     await interaction.reply({
+      ephemeral: true,
       content:
         revokedCount === 0
           ? `🗑️ There were no ${categoryLabel.toLowerCase()} keys to revoke.`
