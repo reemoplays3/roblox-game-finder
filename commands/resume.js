@@ -6,38 +6,35 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("resume")
-    .setDescription("Resumes every paused key and clears any /pause lock"),
+    .setDescription("Removes the /pause lock from every paused key (players still resume their own time in-game)"),
 
   async execute(interaction) {
     const database = readKeys();
-
-    const now = Date.now();
-    let resumedCount = 0;
+    let unlockedCount = 0;
 
     for (const item of database.keys) {
-      const canResume =
-        item.redeemed &&
-        !item.revoked &&
-        item.paused &&
-        item.pausedRemainingSeconds &&
-        item.pausedRemainingSeconds > 0;
+      if (item.redeemed !== true || item.revoked === true || item.paused !== true) {
+        continue;
+      }
 
-      if (canResume) {
-        item.expiresAt =
-          now + item.pausedRemainingSeconds * 1000;
-        item.paused = false;
-        item.pausedAt = null;
-        item.pausedRemainingSeconds = 0;
+      if (item.pausedLocked === true) {
+        // Deliberately NOT auto-starting their timer here. If someone
+        // stepped away, force-resuming would burn their time while
+        // they're not even around to notice. Unlocking just lets them
+        // resume it themselves, in-game, whenever they're actually back.
         item.pausedLocked = false;
-
-        resumedCount++;
+        item.pausedByAdmin = false;
+        unlockedCount++;
       }
     }
 
     writeKeys(database);
 
     await interaction.reply({
-      content: `✅ ${resumedCount} key(s) were unpaused.`
+      content:
+        unlockedCount === 0
+          ? "🔓 There were no locked keys to unlock."
+          : `🔓 ${unlockedCount} key(s) had their lock removed. Each player resumes their own time whenever they're back in-game.`
     });
   }
 };
