@@ -5,6 +5,7 @@ const { readKeys } = require("./lib/keyStore");
 // here (key, user, time), which divides evenly into rows of 3 — no
 // spacer field needed. 25 / 3 = 8 keys safely fit.
 const MAX_KEYS_SHOWN = 8;
+const UPDATE_EVERY_MS = 30_000;
 
 const usernameCache = new Map();
 
@@ -36,6 +37,70 @@ async function getRobloxUsername(userId) {
   }
 }
 
+async function buildEmbed() {
+  const database = readKeys();
+  const now = Date.now();
+
+  const activeKeys = database.keys.filter(
+    key => key.redeemed === true && key.paused !== true && Number(key.expiresAt) > now
+  );
+
+  const pausedKeys = database.keys.filter(key => key.paused === true);
+
+  // Active first, then Paused — newest first within each group.
+  const combined = [
+    ...[...activeKeys].sort((a, b) => Number(b.created || 0) - Number(a.created || 0)),
+    ...[...pausedKeys].sort((a, b) => Number(b.created || 0) - Number(a.created || 0))
+  ];
+
+  const embed = new EmbedBuilder()
+    .setColor(0x1fb8f0)
+    .setTitle(`🔑 Active & Paused Keys (${combined.length})`)
+    .setDescription(
+      `🟢 **${activeKeys.length} Active**  •  ⏸️ **${pausedKeys.length} Paused**`
+    )
+    .setFooter({ text: "Updates every 30 seconds" })
+    .setTimestamp();
+
+  if (combined.length === 0) {
+    embed.addFields({
+      name: "Nothing here",
+      value: "No active or paused keys right now."
+    });
+    return embed;
+  }
+
+  const shown = combined.slice(0, MAX_KEYS_SHOWN);
+  const hiddenCount = combined.length - shown.length;
+
+  for (const key of shown) {
+    const isPaused = key.paused === true;
+    const icon = isPaused ? (key.pausedLocked ? "⏸️🔒" : "⏸️") : "🟢";
+
+    const timeText = isPaused
+      ? formatDuration(Number(key.pausedRemainingSeconds) || 0)
+      : formatDuration(Math.floor((Number(key.expiresAt) - now) / 1000));
+
+    const user = await getRobloxUsername(key.redeemedBy);
+    const userId = key.redeemedBy ? `\`${key.redeemedBy}\`` : "—";
+
+    embed.addFields(
+      { name: "🔑 Key", value: `${icon} \`${key.key}\``, inline: true },
+      { name: "👤 User", value: `${user}\n${userId}`, inline: true },
+      { name: "⏱️ Time", value: timeText, inline: true }
+    );
+  }
+
+  if (hiddenCount > 0) {
+    embed.addFields({
+      name: "\u200b",
+      value: `+${hiddenCount} more not shown (Discord's embed limit).`
+    });
+  }
+
+  return embed;
+}
+
 module.exports = {
   ownerOnly: true,
 
@@ -46,66 +111,21 @@ module.exports = {
   async execute(interaction) {
     await interaction.deferReply();
 
-    const database = readKeys();
-    const now = Date.now();
+    const firstEmbed = await buildEmbed();
 
-    const activeKeys = database.keys.filter(
-      key => key.redeemed === true && key.paused !== true && Number(key.expiresAt) > now
-    );
+    // Editing through the interaction only works for ~15 minutes before
+    // Discord expires the token. Grabbing the actual Message object here
+    // and calling message.edit() on it from now on uses the bot's normal
+    // channel permissions instead, so it can keep refreshing forever.
+    const message = await interaction.editReply({ embeds: [firstEmbed] });
 
-    const pausedKeys = database.keys.filter(key => key.paused === true);
-
-    // Active first, then Paused — newest first within each group.
-    const combined = [
-      ...[...activeKeys].sort((a, b) => Number(b.created || 0) - Number(a.created || 0)),
-      ...[...pausedKeys].sort((a, b) => Number(b.created || 0) - Number(a.created || 0))
-    ];
-
-    const embed = new EmbedBuilder()
-      .setColor(0x1fb8f0)
-      .setTitle(`🔑 Active & Paused Keys (${combined.length})`)
-      .setDescription(
-        `🟢 **${activeKeys.length} Active**  •  ⏸️ **${pausedKeys.length} Paused**`
-      )
-      .setTimestamp();
-
-    if (combined.length === 0) {
-      embed.addFields({
-        name: "Nothing here",
-        value: "No active or paused keys right now."
-      });
-    } else {
-      const shown = combined.slice(0, MAX_KEYS_SHOWN);
-      const hiddenCount = combined.length - shown.length;
-
-      for (const key of shown) {
-        const isPaused = key.paused === true;
-        const icon = isPaused ? (key.pausedLocked ? "⏸️🔒" : "⏸️") : "🟢";
-
-        const timeText = isPaused
-          ? formatDuration(Number(key.pausedRemainingSeconds) || 0)
-          : formatDuration(Math.floor((Number(key.expiresAt) - now) / 1000));
-
-        const user = await getRobloxUsername(key.redeemedBy);
-        const userId = key.redeemedBy ? `\`${key.redeemedBy}\`` : "—";
-
-        embed.addFields(
-          { name: "🔑 Key", value: `${icon} \`${key.key}\``, inline: true },
-          { name: "👤 User", value: `${user}\n${userId}`, inline: true },
-          { name: "⏱️ Time", value: timeText, inline: true }
-        );
+    setInterval(async () => {
+      try {
+        const embed = await buildEmbed();
+        await message.edit({ embeds: [embed] });
+      } catch (error) {
+        console.error("Could not refresh /activekeys:", error);
       }
-
-      if (hiddenCount > 0) {
-        embed.addFields({
-          name: "\u200b",
-          value: `+${hiddenCount} more not shown (Discord's embed limit).`
-        });
-      }
-    }
-
-    await interaction.editReply({
-      embeds: [embed]
-    });
+    }, UPDATE_EVERY_MS);
   }
 };
