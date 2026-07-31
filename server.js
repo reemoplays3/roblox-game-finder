@@ -377,20 +377,22 @@ app.post("/pause-time", (req, res) => {
     });
   }
 
+  const PAUSE_PENALTY_SECONDS = 5 * 60;
+
   const remainingSeconds = Math.floor(
     (Number(activeKey.expiresAt) - now) / 1000
   );
 
-  if (remainingSeconds <= 600) {
+  if (remainingSeconds <= PAUSE_PENALTY_SECONDS) {
     return res.status(400).json({
       success: false,
-      message: "You need more than 10 minutes left to pause."
+      message: "You need more than 5 minutes left to pause."
     });
   }
 
   activeKey.paused = true;
   activeKey.pausedRemainingSeconds =
-    remainingSeconds - 600;
+    remainingSeconds - PAUSE_PENALTY_SECONDS;
   activeKey.expiresAt = null;
   activeKey.pausedAt = now;
 
@@ -398,7 +400,7 @@ app.post("/pause-time", (req, res) => {
 
   return res.json({
     success: true,
-    message: "Time paused. 10 minutes were deducted.",
+    message: "Time paused. 5 minutes were deducted.",
     paused: true,
     remainingSeconds:
       activeKey.pausedRemainingSeconds,
