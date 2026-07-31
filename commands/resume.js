@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
@@ -28,9 +28,6 @@ module.exports = {
         item.paused = false;
         item.pausedAt = null;
         item.pausedRemainingSeconds = 0;
-
-        // This is the official admin override — clears any lock set by
-        // /pause so the key can actually resume.
         item.pausedLocked = false;
 
         resumedCount++;
@@ -39,15 +36,8 @@ module.exports = {
 
     writeKeys(database);
 
-    const embed = new EmbedBuilder()
-      .setTitle("Keys Resumed")
-      .setDescription(
-        `${resumedCount} paused key(s) were resumed. Everything is back to normal.`
-      )
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content: `✅ ${resumedCount} key(s) were unpaused.`
     });
   }
 };

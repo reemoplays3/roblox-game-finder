@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
@@ -30,12 +30,10 @@ module.exports = {
       }
 
       if (item.paused === true && Number(item.pausedRemainingSeconds) > 0) {
-        // Paused key: bank the extra time into the saved seconds.
         item.pausedRemainingSeconds =
           Number(item.pausedRemainingSeconds) + addSeconds;
         updatedCount++;
       } else if (item.paused !== true && Number(item.expiresAt) > now) {
-        // Active key: push the expiry further into the future.
         item.expiresAt = Number(item.expiresAt) + addMs;
         updatedCount++;
       }
@@ -45,17 +43,11 @@ module.exports = {
       writeKeys(database);
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle("Bonus Time Added")
-      .setDescription(
-        updatedCount === 0
-          ? "No active or paused keys were found to add time to."
-          : `Added **${minutes} minute(s)** to **${updatedCount}** key(s) (active + paused).`
-      )
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content:
+        updatedCount === 0
+          ? "🎁 No active or paused keys were found to add time to."
+          : `🎁 Added ${minutes} minute(s) to ${updatedCount} key(s).`
     });
   }
 };

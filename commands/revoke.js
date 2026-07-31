@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 const CATEGORY_LABELS = {
@@ -62,18 +62,11 @@ module.exports = {
       writeKeys(database);
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`${categoryLabel} Keys Revoked & Deleted`)
-      .setDescription(
-        revokedCount === 0
-          ? `There were no ${categoryLabel.toLowerCase()} keys to revoke.`
-          : `Permanently deleted **${revokedCount}** ${categoryLabel.toLowerCase()} key(s). ` +
-            `Anyone who had one loses admin panel access the next time their status refreshes (within a few seconds).`
-      )
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content:
+        revokedCount === 0
+          ? `🗑️ There were no ${categoryLabel.toLowerCase()} keys to revoke.`
+          : `🗑️ ${revokedCount} ${categoryLabel.toLowerCase()} key(s) were revoked.`
     });
   }
 };

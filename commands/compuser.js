@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
@@ -30,7 +30,7 @@ module.exports = {
 
     if (!/^\d+$/.test(robloxUserId)) {
       return interaction.reply({
-        content: "Please enter a valid numeric Roblox user ID.",
+        content: "⚠️ Please enter a valid numeric Roblox user ID.",
         ephemeral: true
       });
     }
@@ -52,12 +52,10 @@ module.exports = {
       }
 
       if (item.paused === true && Number(item.pausedRemainingSeconds) > 0) {
-        // Paused key: bank the extra time into the saved seconds.
         item.pausedRemainingSeconds =
           Number(item.pausedRemainingSeconds) + addSeconds;
         updatedCount++;
       } else if (item.paused !== true && Number(item.expiresAt) > now) {
-        // Active key: push the expiry further into the future.
         item.expiresAt = Number(item.expiresAt) + addMs;
         updatedCount++;
       }
@@ -65,22 +63,15 @@ module.exports = {
 
     if (updatedCount === 0) {
       return interaction.reply({
-        content: `Roblox user ID \`${robloxUserId}\` does not have an active or paused key right now.`,
+        content: `⚠️ Roblox user ID \`${robloxUserId}\` does not have an active or paused key right now.`,
         ephemeral: true
       });
     }
 
     writeKeys(database);
 
-    const embed = new EmbedBuilder()
-      .setTitle("Bonus Time Added")
-      .setDescription(
-        `Added **${minutes} minute(s)** to \`${robloxUserId}\`'s key.`
-      )
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content: `🎁 Added ${minutes} minute(s) to \`${robloxUserId}\`'s key.`
     });
   }
 };

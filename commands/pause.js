@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
@@ -26,8 +26,6 @@ module.exports = {
       const isAlreadyPaused = item.paused === true;
 
       if (isCurrentlyActive) {
-        // Same conversion the old /pausekeys did: bank the remaining
-        // running time as paused seconds.
         const remainingSeconds = Math.floor(
           (Number(item.expiresAt) - now) / 1000
         );
@@ -39,8 +37,6 @@ module.exports = {
         item.pausedLocked = true;
         lockedCount++;
       } else if (isAlreadyPaused) {
-        // Already paused — just lock it in place, don't touch the
-        // saved time they already have banked.
         item.pausedLocked = true;
         lockedCount++;
       }
@@ -50,17 +46,11 @@ module.exports = {
       writeKeys(database);
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle("Keys Paused & Locked")
-      .setDescription(
-        lockedCount === 0
-          ? "There were no active or paused keys to lock."
-          : `${lockedCount} key(s) were paused and locked. Players cannot resume their own time until an admin runs \`/resume\`.`
-      )
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content:
+        lockedCount === 0
+          ? "🛑 No active or paused keys were found to lock."
+          : `🛑 ${lockedCount} key(s) were paused and locked.`
     });
   }
 };

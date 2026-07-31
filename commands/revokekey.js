@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
 module.exports = {
@@ -27,27 +27,17 @@ module.exports = {
     );
 
     if (index === -1) {
-      await interaction.reply({
-        content: "That key was not found.",
+      return interaction.reply({
+        content: "⚠️ That key was not found.",
         ephemeral: true
       });
-
-      return;
     }
 
     const [removedKey] = database.keys.splice(index, 1);
     writeKeys(database);
 
-    const embed = new EmbedBuilder()
-      .setTitle("Key Revoked & Deleted")
-      .addFields({
-        name: "Key",
-        value: `\`${removedKey.key}\``
-      })
-      .setTimestamp();
-
     await interaction.reply({
-      embeds: [embed]
+      content: `🗑️ Key \`${removedKey.key}\` was revoked.`
     });
   }
 };
