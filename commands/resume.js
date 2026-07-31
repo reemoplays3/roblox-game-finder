@@ -34,7 +34,7 @@ module.exports = {
       content:
         unlockedCount === 0
           ? "🔓 There were no locked keys to unlock."
-          : `🔓 ${unlockedCount} key(s) had their lock removed. Each player resumes their own time whenever they're back in-game.`
+          : `🔓 ${unlockedCount} key(s) unpaused.`
     });
   }
 };
