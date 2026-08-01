@@ -1,87 +1,30 @@
-const fs = require("fs");
-const path = require("path");
-
 const {
   SlashCommandBuilder,
   EmbedBuilder
 } = require("discord.js");
 
-const usersPath = path.join(
-  process.cwd(),
-  "data",
-  "users.json"
-);
+const { readUsers, normalizeIds } = require("./lib/userStore");
 
-const keysPath = path.join(
-  process.cwd(),
-  "data",
-  "keys.json"
-);
-
-function normalizeIds(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      value
-        .map(item => String(item || "").trim())
-        .filter(item => /^\d+$/.test(item))
-    )
-  );
-}
-
-function readJson(filePath, fallback) {
-  try {
-    return JSON.parse(
-      fs.readFileSync(filePath, "utf8")
-    );
-  } catch (error) {
-    console.error(
-      `Could not read ${filePath}:`,
-      error
-    );
-
-    return fallback;
-  }
-}
-
+// Whitelisted (rejoin-eligible) = has real history (everRedeemed) or
+// permanent access, MINUS blacklisted, MINUS neutral. This mirrors
+// exactly what server.js computes as eligibleForRejoin, so this command
+// never drifts out of sync with what players actually see in-game.
 function readStatusDatabase() {
-  const users = readJson(usersPath, {});
-  const keys = readJson(keysPath, { keys: [] });
+  const users = readUsers();
 
-  const redeemedUserIds = normalizeIds(
-    Array.isArray(keys.keys)
-      ? keys.keys
-          .filter(key => key && key.redeemed)
-          .map(key => key.redeemedBy)
-      : []
-  );
+  const notBlockedOrNeutral = id =>
+    !users.blacklisted.includes(id) && !users.neutral.includes(id);
 
   const whitelisted = normalizeIds([
-    ...normalizeIds(users.redeemAllowed),
-    ...normalizeIds(users.whitelisted),
-    ...redeemedUserIds
-  ]);
-
-  const permanent = normalizeIds([
-    ...normalizeIds(users.permanent),
-    ...(
-      Array.isArray(users.permanent)
-        ? []
-        : normalizeIds(users.whitelisted)
-    )
-  ]);
-
-  const blacklisted = normalizeIds(
-    users.blacklisted
-  );
+    ...users.everRedeemed,
+    ...users.permanent
+  ]).filter(notBlockedOrNeutral);
 
   return {
     whitelisted,
-    permanent,
-    blacklisted
+    permanent: users.permanent,
+    neutral: users.neutral,
+    blacklisted: users.blacklisted
   };
 }
 
@@ -252,8 +195,8 @@ module.exports = {
 
     const allUserIds = normalizeIds([
       ...status.whitelisted,
-      ...status.blacklisted,
-      ...status.permanent
+      ...status.permanent,
+      ...status.blacklisted
     ]);
 
     const profiles =
@@ -264,7 +207,7 @@ module.exports = {
       .setTitle("📊 Sweet TP User Status")
       .setDescription(
         "Current Roblox access records saved by the bot.\n\n" +
-        `🟢 **Whitelisted:** ${status.whitelisted.length}\n` +
+        `🟢 **Whitelisted (rejoin-eligible):** ${status.whitelisted.length}\n` +
         `⭐ **Permanent Access:** ${status.permanent.length}\n` +
         `🔴 **Blacklisted:** ${status.blacklisted.length}`
       )

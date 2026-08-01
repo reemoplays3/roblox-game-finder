@@ -17,6 +17,40 @@ const keysPath = path.join(process.cwd(), "data", "keys.json");
 // drifting apart if the start command or folder layout changes.
 const usersPath = path.join(process.cwd(), "data", "users.json");
 
+// A small, permanent log of redemption events — separate from keys.json
+// because merged keys get deleted from there once their time is folded
+// into another key. Capped so it can't grow forever.
+const redemptionsPath = path.join(process.cwd(), "data", "redemptions.json");
+const MAX_REDEMPTION_LOG_ENTRIES = 200;
+
+function readRedemptionLog() {
+  try {
+    const data = JSON.parse(fs.readFileSync(redemptionsPath, "utf8"));
+    if (!Array.isArray(data.entries)) {
+      return { entries: [] };
+    }
+    return data;
+  } catch (_error) {
+    return { entries: [] };
+  }
+}
+
+function writeRedemptionLog(log) {
+  fs.mkdirSync(path.dirname(redemptionsPath), { recursive: true });
+  fs.writeFileSync(redemptionsPath, JSON.stringify(log, null, 2), "utf8");
+}
+
+function appendRedemptionLogEntry(entry) {
+  const log = readRedemptionLog();
+  log.entries.push(entry);
+
+  if (log.entries.length > MAX_REDEMPTION_LOG_ENTRIES) {
+    log.entries = log.entries.slice(-MAX_REDEMPTION_LOG_ENTRIES);
+  }
+
+  writeRedemptionLog(log);
+}
+
 app.use(
   express.json({
     verify: (req, res, buf) => {
@@ -147,6 +181,14 @@ function readUsersDatabase() {
       users.blacklisted = [];
     }
 
+    if (!Array.isArray(users.neutral)) {
+      users.neutral = [];
+    }
+
+    if (!Array.isArray(users.everRedeemed)) {
+      users.everRedeemed = [];
+    }
+
     users.redeemAllowed = Array.from(
       new Set([
         ...users.redeemAllowed.map(String),
@@ -160,6 +202,12 @@ function readUsersDatabase() {
     users.blacklisted =
       users.blacklisted.map(String);
 
+    users.neutral =
+      users.neutral.map(String);
+
+    users.everRedeemed =
+      users.everRedeemed.map(String);
+
     return users;
   } catch (error) {
     console.error(
@@ -170,9 +218,47 @@ function readUsersDatabase() {
     return {
       redeemAllowed: [],
       permanent: [],
-      blacklisted: []
+      blacklisted: [],
+      neutral: [],
+      everRedeemed: []
     };
   }
+}
+
+// Every known field gets written back — omitting one here would silently
+// erase it from the file the next time anything saves users.json.
+function writeUsersDatabase(users) {
+  fs.mkdirSync(path.dirname(usersPath), { recursive: true });
+
+  fs.writeFileSync(
+    usersPath,
+    JSON.stringify(
+      {
+        redeemAllowed: Array.from(new Set((users.redeemAllowed || []).map(String))),
+        permanent: Array.from(new Set((users.permanent || []).map(String))),
+        blacklisted: Array.from(new Set((users.blacklisted || []).map(String))),
+        neutral: Array.from(new Set((users.neutral || []).map(String))),
+        everRedeemed: Array.from(new Set((users.everRedeemed || []).map(String)))
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+// Permanently records that this Roblox user has redeemed a key at least
+// once. Unlike keys.json, this is never cleaned up — so rejoin
+// eligibility survives even after the actual key record gets pruned.
+function recordEverRedeemed(robloxUserId) {
+  const users = readUsersDatabase();
+
+  if (users.everRedeemed.includes(robloxUserId)) {
+    return;
+  }
+
+  users.everRedeemed.push(robloxUserId);
+  writeUsersDatabase(users);
 }
 
 function getAccessListStatus(robloxUserId) {
@@ -191,7 +277,13 @@ function getAccessListStatus(robloxUserId) {
         robloxUserId
       ),
 
-    blacklisted: blocked
+    blacklisted: blocked,
+
+    // Explicit override — if true, this user should NEVER be treated as
+    // "whitelisted" for rejoin-button purposes, even if they've actually
+    // redeemed a key before. Set by the /neutral Discord command.
+    isNeutral:
+      users.neutral.includes(robloxUserId)
   };
 }
 
@@ -208,7 +300,8 @@ function getUserStatus(
   );
 
   const hasRedeemedBefore =
-    redeemedKeys.length > 0;
+    redeemedKeys.length > 0 ||
+    readUsersDatabase().everRedeemed.includes(robloxUserId);
 
   const validKeys = redeemedKeys.filter(
     item => !item.revoked
@@ -251,6 +344,15 @@ function getUserStatus(
   const permanentStatus =
     getAccessListStatus(robloxUserId);
 
+  // "Whitelisted" here means: this person has proven history (redeemed a
+  // key before, or has permanent access) and hasn't been blocked or reset
+  // back to neutral. This is what decides whether they get a rejoin
+  // button when they currently have no active/paused key.
+  const eligibleForRejoin =
+    !permanentStatus.blacklisted &&
+    !permanentStatus.isNeutral &&
+    (hasRedeemedBefore || permanentStatus.permanentlyWhitelisted);
+
   return {
     hasRedeemedBefore,
     hasActiveKey: remainingSeconds > 0,
@@ -261,7 +363,10 @@ function getUserStatus(
     permanentlyWhitelisted:
       permanentStatus.permanentlyWhitelisted,
     blacklisted:
-      permanentStatus.blacklisted
+      permanentStatus.blacklisted,
+    isNeutral:
+      permanentStatus.isNeutral,
+    eligibleForRejoin
   };
 }
 
@@ -423,6 +528,23 @@ app.post("/redeem", (req, res) => {
   }
 
   writeKeysDatabase(database);
+
+  // Captured BEFORE recordEverRedeemed() runs, so this reflects whether
+  // this was genuinely their first-ever redemption.
+  const wasFirstRedeem = !readUsersDatabase().everRedeemed.includes(robloxUserId);
+
+  // Permanent record — survives even if this key later gets revoked or
+  // auto-cleaned once expired.
+  recordEverRedeemed(robloxUserId);
+
+  appendRedemptionLogEntry({
+    key: enteredKey,
+    robloxUserId,
+    redeemedAt: now,
+    minutesAdded: minutes,
+    wasFirstRedeem,
+    mergedIntoExisting
+  });
 
   // Best-effort — never blocks or fails the redemption itself.
   grantBuyerRole(discordUserIdForRole);
@@ -619,6 +741,7 @@ app.post("/validate", (req, res) => {
         status.allowedToRedeem,
       hasRedeemedBefore:
         status.hasRedeemedBefore,
+      eligibleForRejoin: false,
       hasActiveKey: false,
       remainingSeconds: 0
     });
@@ -639,6 +762,9 @@ app.post("/validate", (req, res) => {
 
     hasRedeemedBefore:
       status.hasRedeemedBefore,
+
+    eligibleForRejoin:
+      status.eligibleForRejoin,
 
     hasActiveKey:
       status.hasActiveKey,
@@ -685,6 +811,9 @@ app.post("/user-status", (req, res) => {
 
     hasRedeemedBefore:
       status.hasRedeemedBefore,
+
+    eligibleForRejoin:
+      status.eligibleForRejoin,
 
     hasActiveKey:
       status.hasActiveKey,
