@@ -5,8 +5,8 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("whitelist")
-    .setDescription("Grants a Roblox user 'already redeemed' status: rejoin button + teleport protection.")
+    .setName("neutral")
+    .setDescription("Resets a Roblox user to neutral: can redeem, but no rejoin button")
     .addStringOption(option =>
       option
         .setName("roblox_user_id")
@@ -28,22 +28,19 @@ module.exports = {
 
     const users = readUsers();
 
-    // Whitelisting always wins over any prior block/reset — they should
-    // come out of this able to redeem, protected from forced teleports,
-    // and eligible for the rejoin button.
+    // Neutral means: allowed to redeem again (so make sure they're not
+    // blacklisted), but explicitly does NOT count as having redeemed
+    // before for rejoin-button purposes — even if they actually have.
     users.blacklisted = removeId(users.blacklisted, robloxUserId);
-    users.neutral = removeId(users.neutral, robloxUserId);
 
-    if (!users.everRedeemed.includes(robloxUserId)) {
-      users.everRedeemed.push(robloxUserId);
+    if (!users.neutral.includes(robloxUserId)) {
+      users.neutral.push(robloxUserId);
     }
 
     writeUsers(users);
 
     return interaction.reply({
-      content:
-        `✅ \`${robloxUserId}\` is now whitelisted — treated as if they've already ` +
-        `redeemed a key: they get the rejoin button and are protected from forced teleports.`,
+      content: `⚪ \`${robloxUserId}\` was reset to neutral — they can redeem keys, but won't get a rejoin button.`,
       ephemeral: true
     });
   }
