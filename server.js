@@ -918,6 +918,34 @@ app.post("/request-buyer-role", async (req, res) => {
   });
 });
 
+// One-time (per restart) backfill: makes sure anyone who currently holds
+// — or has ever held — a redeemed key in keys.json is also recorded in
+// the permanent everRedeemed list, even if they redeemed before this
+// tracking was added. Safe to run every startup — it's a no-op once
+// everyone's already recorded.
+function backfillEverRedeemed() {
+  const keysDatabase = readKeysDatabase();
+  const users = readUsersDatabase();
+  let changed = false;
+
+  for (const key of keysDatabase.keys) {
+    if (key.redeemed === true && key.redeemedBy) {
+      const id = String(key.redeemedBy);
+      if (!users.everRedeemed.includes(id)) {
+        users.everRedeemed.push(id);
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    writeUsersDatabase(users);
+    console.log("Backfilled everRedeemed from existing keys.json data.");
+  }
+}
+
+backfillEverRedeemed();
+
 app.listen(PORT, () => {
   console.log(
     `Server is running on port ${PORT}`
