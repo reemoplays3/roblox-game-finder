@@ -98,10 +98,104 @@ function makeKeyEntry(minutes) {
     pausedAt: null,
     pausedRemainingSeconds: null,
     pausedLocked: false,
+    // True only when /pause force-paused a previously-ACTIVE key. Stays
+    // false if the key was already paused by the player before /pause
+    // ran — that distinction is what lets /resume tell the two apart.
+    pausedByAdmin: false,
+
+    // Set by /keysend when a key is delivered to a specific Discord
+    // user. server.js's /redeem route uses this to grant the "Buyer"
+    // role automatically once this exact key gets redeemed in-game.
+    discordUserId: null,
 
     revoked: false,
     revokedAt: null
   };
+}
+
+// ===== REVOKED KEY ARCHIVE =====
+// A small permanent log of exactly what a key looked like the instant
+// before it got deleted by a revoke command. This is what /restorekey
+// reads from — without it, revoking is a one-way door since revoke
+// commands delete keys outright rather than just flagging them.
+const revokedArchivePath = path.join(process.cwd(), "data", "revoked-keys.json");
+const MAX_REVOKED_ARCHIVE_ENTRIES = 200;
+
+function readRevokedArchive() {
+  try {
+    const data = JSON.parse(fs.readFileSync(revokedArchivePath, "utf8"));
+    if (!Array.isArray(data.entries)) {
+      return { entries: [] };
+    }
+    return data;
+  } catch (_error) {
+    return { entries: [] };
+  }
+}
+
+function writeRevokedArchive(archive) {
+  fs.mkdirSync(path.dirname(revokedArchivePath), { recursive: true });
+  fs.writeFileSync(revokedArchivePath, JSON.stringify(archive, null, 2), "utf8");
+}
+
+// Snapshots a key right before it's deleted. Captures the ACTUAL amount
+// of time left (in seconds) rather than a frozen timestamp — that's
+// what lets a later restore give back the same duration counted fresh
+// from the moment of restoration, instead of less time than they
+// actually had (since real time keeps passing while it's revoked).
+function archiveRevokedKey(keyEntry) {
+  const now = Date.now();
+  let remainingSeconds = 0;
+
+  if (keyEntry.paused === true) {
+    remainingSeconds = Number(keyEntry.pausedRemainingSeconds) || 0;
+  } else if (keyEntry.redeemed === true && Number(keyEntry.expiresAt) > now) {
+    remainingSeconds = Math.floor((Number(keyEntry.expiresAt) - now) / 1000);
+  }
+
+  const archive = readRevokedArchive();
+
+  archive.entries.push({
+    key: keyEntry.key,
+    minutes: keyEntry.minutes,
+    redeemed: keyEntry.redeemed === true,
+    redeemedBy: keyEntry.redeemedBy || null,
+    redeemedAt: keyEntry.redeemedAt || null,
+    discordUserId: keyEntry.discordUserId || null,
+    wasPaused: keyEntry.paused === true,
+    pausedLocked: keyEntry.pausedLocked === true,
+    remainingSeconds,
+    revokedAt: now
+  });
+
+  if (archive.entries.length > MAX_REVOKED_ARCHIVE_ENTRIES) {
+    archive.entries = archive.entries.slice(-MAX_REVOKED_ARCHIVE_ENTRIES);
+  }
+
+  writeRevokedArchive(archive);
+}
+
+// Finds the most recent archived entry for a key code, removes it from
+// the archive (so it can't be restored twice), and returns it — or null
+// if nothing matching was found.
+function takeArchivedKey(keyCode) {
+  const archive = readRevokedArchive();
+
+  let foundIndex = -1;
+  for (let i = archive.entries.length - 1; i >= 0; i--) {
+    if (archive.entries[i].key === keyCode) {
+      foundIndex = i;
+      break;
+    }
+  }
+
+  if (foundIndex === -1) {
+    return null;
+  }
+
+  const [entry] = archive.entries.splice(foundIndex, 1);
+  writeRevokedArchive(archive);
+  return entry;
 }
 
 module.exports = {
@@ -109,5 +203,7 @@ module.exports = {
   readKeys,
   writeKeys,
   makeKeyString,
-  makeKeyEntry
+  makeKeyEntry,
+  archiveRevokedKey,
+  takeArchivedKey
 };

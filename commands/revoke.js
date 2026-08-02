@@ -1,5 +1,5 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { readKeys, writeKeys } = require("./lib/keyStore");
+const { readKeys, writeKeys, archiveRevokedKey } = require("./lib/keyStore");
 
 const CATEGORY_LABELS = {
   active: "Active",
@@ -32,7 +32,7 @@ module.exports = {
 
   data: new SlashCommandBuilder()
     .setName("revoke")
-    .setDescription("Permanently deletes every key in one category")
+    .setDescription("Revokes every key in one category (can be undone per-key with /restorekey)")
     .addStringOption(option =>
       option
         .setName("category")
@@ -52,22 +52,24 @@ module.exports = {
     const database = readKeys();
     const now = Date.now();
 
-    const before = database.keys.length;
-    database.keys = database.keys.filter(
-      key => !matchesCategory(key, category, now)
-    );
-    const revokedCount = before - database.keys.length;
+    const toRevoke = database.keys.filter(key => matchesCategory(key, category, now));
+
+    for (const key of toRevoke) {
+      archiveRevokedKey(key);
+    }
+
+    database.keys = database.keys.filter(key => !matchesCategory(key, category, now));
+    const revokedCount = toRevoke.length;
 
     if (revokedCount > 0) {
       writeKeys(database);
     }
 
     await interaction.reply({
-      ephemeral: true,
       content:
         revokedCount === 0
           ? `🗑️ There were no ${categoryLabel.toLowerCase()} keys to revoke.`
-          : `🗑️ ${revokedCount} ${categoryLabel.toLowerCase()} key(s) were revoked.`
+          : `🗑️ ${revokedCount} ${categoryLabel.toLowerCase()} key(s) were revoked. Each can be undone individually with \`/restorekey\`.`
     });
   }
 };

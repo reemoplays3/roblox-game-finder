@@ -1,12 +1,12 @@
 const { SlashCommandBuilder } = require("discord.js");
-const { readKeys, writeKeys } = require("./lib/keyStore");
+const { readKeys, writeKeys, archiveRevokedKey } = require("./lib/keyStore");
 
 module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
     .setName("revokekey")
-    .setDescription("Revokes and permanently deletes a key")
+    .setDescription("Revokes a key (can be undone later with /restorekey)")
     .addStringOption(option =>
       option
         .setName("key")
@@ -34,11 +34,11 @@ module.exports = {
     }
 
     const [removedKey] = database.keys.splice(index, 1);
+    archiveRevokedKey(removedKey);
     writeKeys(database);
 
     await interaction.reply({
-      ephemeral: true,
-      content: `🗑️ Key \`${removedKey.key}\` was revoked.`
+      content: `🗑️ Key \`${removedKey.key}\` was revoked. Use \`/restorekey\` to undo this.`
     });
   }
 };
