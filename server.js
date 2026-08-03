@@ -303,6 +303,14 @@ function getUserStatus(
     redeemedKeys.length > 0 ||
     readUsersDatabase().everRedeemed.includes(robloxUserId);
 
+  // Self-healing: if this person genuinely holds/held a key but somehow
+  // never made it into the permanent everRedeemed record (e.g. redeemed
+  // before that tracking existed), fix it right now instead of letting
+  // the gap persist indefinitely.
+  if (redeemedKeys.length > 0) {
+    recordEverRedeemed(robloxUserId);
+  }
+
   const validKeys = redeemedKeys.filter(
     item => !item.revoked
   );

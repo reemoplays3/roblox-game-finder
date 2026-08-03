@@ -1,5 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
-const { readUsers } = require("./lib/userStore");
+const { readUsers, writeUsers } = require("./lib/userStore");
 const { readKeys } = require("./lib/keyStore");
 
 function formatDuration(seconds) {
@@ -52,15 +52,28 @@ module.exports = {
     await interaction.deferReply();
 
     const users = readUsers();
+    const database = readKeys();
+    const now = Date.now();
+
+    // Same live check the game itself uses — any key record (active,
+    // paused, or even expired-but-not-yet-cleaned) that isn't revoked
+    // counts as real redemption history, not just the permanent list.
+    const hasKeyRecord = database.keys.some(item =>
+      String(item.redeemedBy || "") === robloxUserId && !item.revoked
+    );
+
     const isBlacklisted = users.blacklisted.includes(robloxUserId);
     const isNeutral = users.neutral.includes(robloxUserId);
     const isPermanent = users.permanent.includes(robloxUserId);
-    const hasHistory = users.everRedeemed.includes(robloxUserId);
+    const hasHistory = users.everRedeemed.includes(robloxUserId) || hasKeyRecord;
 
-    // Same priority order used everywhere else: blacklisted always wins,
-    // then neutral overrides history, then real history/permanent access
-    // makes them whitelisted, otherwise they're just a default/neutral
-    // user who's never redeemed anything.
+    // Self-healing: if live key evidence exists but the permanent record
+    // never caught it, fix that right now so this can't drift again.
+    if (hasKeyRecord && !users.everRedeemed.includes(robloxUserId)) {
+      users.everRedeemed.push(robloxUserId);
+      writeUsers(users);
+    }
+
     let statusLine;
     if (isBlacklisted) {
       statusLine = "🔴 **Blacklisted** — cannot redeem keys, no rejoin eligibility";
@@ -71,9 +84,6 @@ module.exports = {
     } else {
       statusLine = "⚪ **Neutral** — never redeemed a key, no special status";
     }
-
-    const database = readKeys();
-    const now = Date.now();
 
     const holder = database.keys.find(item =>
       String(item.redeemedBy || "") === robloxUserId &&
