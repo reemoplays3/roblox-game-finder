@@ -385,7 +385,7 @@ app.get("/", (req, res) => {
 app.post("/redeem", (req, res) => {
   const enteredKey = String(
     req.body.key || ""
-  ).trim();
+  ).trim().toUpperCase();
 
   const robloxUserId = String(
     req.body.robloxUserId || ""
