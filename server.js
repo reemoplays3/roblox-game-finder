@@ -378,6 +378,50 @@ function getUserStatus(
   };
 }
 
+function makeCashoutKeyString() {
+  return crypto.randomBytes(6).toString("hex").toUpperCase();
+}
+
+app.post("/cashout-key", (req, res) => {
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+
+  if (!robloxUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "No Roblox user ID provided."
+    });
+  }
+
+  const database = readKeysDatabase();
+
+  const newKey = {
+    key: makeCashoutKeyString(),
+    minutes: 60,
+    created: Date.now(),
+    redeemed: false,
+    redeemedAt: null,
+    redeemedBy: null,
+    expiresAt: null,
+    paused: false,
+    pausedAt: null,
+    pausedRemainingSeconds: null,
+    pausedLocked: false,
+    pausedByAdmin: false,
+    discordUserId: null,
+    revoked: false,
+    revokedAt: null
+  };
+
+  database.keys.push(newKey);
+  writeKeysDatabase(database);
+
+  return res.json({
+    success: true,
+    key: newKey.key,
+    minutes: newKey.minutes
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("Sweet TP API is running!");
 });
