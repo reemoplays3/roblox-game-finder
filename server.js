@@ -621,7 +621,7 @@ app.post("/pause-time", (req, res) => {
     });
   }
 
-  const PAUSE_PENALTY_SECONDS = 5 * 60;
+  const PAUSE_PENALTY_SECONDS = 10 * 60;
 
   const remainingSeconds = Math.floor(
     (Number(activeKey.expiresAt) - now) / 1000
@@ -630,7 +630,7 @@ app.post("/pause-time", (req, res) => {
   if (remainingSeconds <= PAUSE_PENALTY_SECONDS) {
     return res.status(400).json({
       success: false,
-      message: "You need more than 5 minutes left to pause."
+      message: "You need more than 10 minutes left to pause."
     });
   }
 
