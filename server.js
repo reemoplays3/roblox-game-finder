@@ -778,16 +778,26 @@ app.post("/pause-time", (req, res) => {
     });
   }
 
-  const PAUSE_PENALTY_SECONDS = 10 * 60;
-
   const remainingSeconds = Math.floor(
     (Number(activeKey.expiresAt) - now) / 1000
   );
 
+  const TWO_HOURS_SECONDS = 2 * 60 * 60;
+  const FIVE_HOURS_SECONDS = 5 * 60 * 60;
+
+  let PAUSE_PENALTY_SECONDS;
+  if (remainingSeconds < TWO_HOURS_SECONDS) {
+    PAUSE_PENALTY_SECONDS = 5 * 60;
+  } else if (remainingSeconds < FIVE_HOURS_SECONDS) {
+    PAUSE_PENALTY_SECONDS = 10 * 60;
+  } else {
+    PAUSE_PENALTY_SECONDS = 15 * 60;
+  }
+
   if (remainingSeconds <= PAUSE_PENALTY_SECONDS) {
     return res.status(400).json({
       success: false,
-      message: "You need more than 10 minutes left to pause."
+      message: `You need more than ${PAUSE_PENALTY_SECONDS / 60} minutes left to pause.`
     });
   }
 
