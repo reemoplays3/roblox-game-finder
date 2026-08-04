@@ -390,6 +390,153 @@ function getUserStatus(
   };
 }
 
+function makeTransferKeyString() {
+  return crypto.randomBytes(6).toString("hex").toUpperCase();
+}
+
+app.post("/transfer-time", (req, res) => {
+  const fromUserId = String(req.body.fromRobloxUserId || "").trim();
+  const toUserId = String(req.body.toRobloxUserId || "").trim();
+  const minutes = Number(req.body.minutes);
+
+  if (!fromUserId || !toUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing user IDs."
+    });
+  }
+
+  if (fromUserId === toUserId) {
+    return res.status(400).json({
+      success: false,
+      message: "Cannot transfer to yourself."
+    });
+  }
+
+  if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes)) {
+    return res.status(400).json({
+      success: false,
+      message: "Enter a valid whole number of minutes."
+    });
+  }
+
+  const fromStatus = getAccessListStatus(fromUserId);
+
+  if (fromStatus.blacklisted) {
+    return res.status(403).json({
+      success: false,
+      message: "You are blacklisted."
+    });
+  }
+
+  if (fromStatus.permanentlyWhitelisted) {
+    return res.status(400).json({
+      success: false,
+      message: "Permanent access has no time to transfer."
+    });
+  }
+
+  const toStatus = getAccessListStatus(toUserId);
+
+  if (toStatus.blacklisted) {
+    return res.status(403).json({
+      success: false,
+      message: "That user is blacklisted and can't receive time."
+    });
+  }
+
+  if (toStatus.permanentlyWhitelisted) {
+    return res.status(400).json({
+      success: false,
+      message: "That user already has permanent access."
+    });
+  }
+
+  const database = readKeysDatabase();
+  const now = Date.now();
+
+  const findHolderKeyIndex = robloxUserId =>
+    database.keys.findIndex(item =>
+      String(item.redeemedBy || "") === robloxUserId &&
+      !item.revoked &&
+      (
+        (item.paused === true && Number(item.pausedRemainingSeconds) > 0) ||
+        (item.paused !== true && Number(item.expiresAt) > now)
+      )
+    );
+
+  const fromKeyIndex = findHolderKeyIndex(fromUserId);
+
+  if (fromKeyIndex === -1) {
+    return res.status(404).json({
+      success: false,
+      message: "You need an active or paused key to transfer time."
+    });
+  }
+
+  const fromKey = database.keys[fromKeyIndex];
+
+  const fromRemainingSeconds = fromKey.paused === true
+    ? Number(fromKey.pausedRemainingSeconds) || 0
+    : Math.max(0, Math.floor((Number(fromKey.expiresAt) - now) / 1000));
+
+  const transferSeconds = minutes * 60;
+
+  if (transferSeconds > fromRemainingSeconds) {
+    return res.status(400).json({
+      success: false,
+      message: "You don't have that much time to transfer."
+    });
+  }
+
+  if (fromKey.paused === true) {
+    fromKey.pausedRemainingSeconds = fromRemainingSeconds - transferSeconds;
+  } else {
+    fromKey.expiresAt = Number(fromKey.expiresAt) - transferSeconds * 1000;
+  }
+
+  const toKeyIndex = findHolderKeyIndex(toUserId);
+
+  if (toKeyIndex !== -1) {
+    const toKey = database.keys[toKeyIndex];
+
+    if (toKey.paused === true) {
+      toKey.pausedRemainingSeconds =
+        (Number(toKey.pausedRemainingSeconds) || 0) + transferSeconds;
+    } else {
+      toKey.expiresAt = Number(toKey.expiresAt) + transferSeconds * 1000;
+    }
+  } else {
+    database.keys.push({
+      key: makeTransferKeyString(),
+      minutes,
+      created: now,
+      redeemed: true,
+      redeemedAt: now,
+      redeemedBy: toUserId,
+      expiresAt: now + transferSeconds * 1000,
+      paused: false,
+      pausedAt: null,
+      pausedRemainingSeconds: null,
+      pausedLocked: false,
+      pausedByAdmin: false,
+      discordUserId: null,
+      revoked: false,
+      revokedAt: null
+    });
+  }
+
+  writeKeysDatabase(database);
+  recordEverRedeemed(toUserId);
+
+  return res.json({
+    success: true,
+    message: `Transferred ${minutes} minute(s).`
+  });
+});
+
+app.get("/", (req, res) => {
+
 app.get("/", (req, res) => {
   res.send("Sweet TP API is running!");
 });
