@@ -189,6 +189,10 @@ function readUsersDatabase() {
       users.everRedeemed = [];
     }
 
+    if (!Array.isArray(users.banned)) {
+      users.banned = [];
+    }
+
     users.redeemAllowed = Array.from(
       new Set([
         ...users.redeemAllowed.map(String),
@@ -208,6 +212,9 @@ function readUsersDatabase() {
     users.everRedeemed =
       users.everRedeemed.map(String);
 
+    users.banned =
+      users.banned.map(String);
+
     return users;
   } catch (error) {
     console.error(
@@ -220,7 +227,8 @@ function readUsersDatabase() {
       permanent: [],
       blacklisted: [],
       neutral: [],
-      everRedeemed: []
+      everRedeemed: [],
+      banned: []
     };
   }
 }
@@ -238,7 +246,8 @@ function writeUsersDatabase(users) {
         permanent: Array.from(new Set((users.permanent || []).map(String))),
         blacklisted: Array.from(new Set((users.blacklisted || []).map(String))),
         neutral: Array.from(new Set((users.neutral || []).map(String))),
-        everRedeemed: Array.from(new Set((users.everRedeemed || []).map(String)))
+        everRedeemed: Array.from(new Set((users.everRedeemed || []).map(String))),
+        banned: Array.from(new Set((users.banned || []).map(String)))
       },
       null,
       2
@@ -246,7 +255,6 @@ function writeUsersDatabase(users) {
     "utf8"
   );
 }
-
 // Permanently records that this Roblox user has redeemed a key at least
 // once. Unlike keys.json, this is never cleaned up — so rejoin
 // eligibility survives even after the actual key record gets pruned.
@@ -283,10 +291,14 @@ function getAccessListStatus(robloxUserId) {
     // "whitelisted" for rejoin-button purposes, even if they've actually
     // redeemed a key before. Set by the /neutral Discord command.
     isNeutral:
-      users.neutral.includes(robloxUserId)
+      users.neutral.includes(robloxUserId),
+
+    // A real ban — the game itself kicks this player the instant it
+    // sees this, not just a panel/redeem restriction like blacklisted.
+    banned:
+      users.banned.includes(robloxUserId)
   };
 }
-
 function getUserStatus(
   database,
   robloxUserId
