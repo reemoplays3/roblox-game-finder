@@ -32,10 +32,13 @@ module.exports = {
 
     const users = readUsers();
 
-    if (!users.banned.includes(robloxUserId)) {
-      users.banned.push(robloxUserId);
+    if (users.banned.includes(robloxUserId)) {
+      return interaction.editReply({
+        content: `⚠️ \`${rawInput}\` (\`${robloxUserId}\`) is already banned. Use \`/unban\` first if you need to redo this.`
+      });
     }
 
+    users.banned.push(robloxUserId);
     writeUsers(users);
 
     return interaction.editReply({
