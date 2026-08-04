@@ -7,7 +7,7 @@ const {
 } = require("discord.js");
 
 const STORE_TITLE = "Sweet TP — Purchase Access";
-const STORE_DESCRIPTION = "### Instant delivery. Pay with crypto or card.";
+const STORE_DESCRIPTION = "**Instant delivery. Pay with crypto or card.**";
 const STORE_URL = "https://sweettp.mykomerza.com/";
 const FOOTER_TEXT = "All prices in USD · your key arrives right after checkout";
 const COUPON_CODE = "SAVE75";
@@ -41,7 +41,7 @@ module.exports = {
     for (const tier of TIERS) {
       embed.addFields({
         name: tier.label,
-        value: `### ${tier.price}`,
+        value: `**${tier.price}**`,
         inline: true
       });
     }
@@ -49,12 +49,12 @@ module.exports = {
     embed.addFields(
       {
         name: "Accepted",
-        value: `### ${ACCEPTED_PAYMENTS}`,
+        value: `**${ACCEPTED_PAYMENTS}**`,
         inline: false
       },
       {
         name: "🏷️ Coupon Code",
-        value: `### \`${COUPON_CODE}\` — ${COUPON_DISCOUNT_TEXT}`,
+        value: `**\`${COUPON_CODE}\` — ${COUPON_DISCOUNT_TEXT}**`,
         inline: false
       }
     );
