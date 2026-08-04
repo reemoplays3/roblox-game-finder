@@ -536,8 +536,6 @@ app.post("/transfer-time", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-
-app.get("/", (req, res) => {
   res.send("Sweet TP API is running!");
 });
 
