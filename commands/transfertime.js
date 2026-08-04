@@ -27,7 +27,7 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("transferkey")
+    .setName("transfertime")
     .setDescription("Transfers minutes of active/paused key time from one Roblox user to another")
     .addStringOption(option =>
       option
