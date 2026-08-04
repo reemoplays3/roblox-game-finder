@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { readUsers, writeUsers, removeId } = require("./lib/userStore");
+const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
 module.exports = {
   ownerOnly: true,
@@ -9,28 +10,26 @@ module.exports = {
     .setDescription("Grants a Roblox user 'already redeemed' status: rejoin button + teleport protection.")
     .addStringOption(option =>
       option
-        .setName("roblox_user_id")
-        .setDescription("The numeric Roblox user ID.")
+        .setName("roblox_user")
+        .setDescription("Roblox username or numeric user ID.")
         .setRequired(true)
     ),
 
   async execute(interaction) {
-    const robloxUserId = interaction.options
-      .getString("roblox_user_id")
-      .trim();
+    const rawInput = interaction.options.getString("roblox_user").trim();
 
-    if (!/^\d+$/.test(robloxUserId)) {
-      return interaction.reply({
-        content: "⚠️ Please enter a valid numeric Roblox user ID.",
-        ephemeral: true
+    await interaction.deferReply({ ephemeral: true });
+
+    const robloxUserId = await resolveRobloxUserId(rawInput);
+
+    if (!robloxUserId) {
+      return interaction.editReply({
+        content: `⚠️ Could not find a Roblox user matching \`${rawInput}\`.`
       });
     }
 
     const users = readUsers();
 
-    // Whitelisting always wins over any prior block/reset — they should
-    // come out of this able to redeem, protected from forced teleports,
-    // and eligible for the rejoin button.
     users.blacklisted = removeId(users.blacklisted, robloxUserId);
     users.neutral = removeId(users.neutral, robloxUserId);
 
@@ -40,11 +39,10 @@ module.exports = {
 
     writeUsers(users);
 
-    return interaction.reply({
+    return interaction.editReply({
       content:
-        `✅ \`${robloxUserId}\` is now whitelisted — treated as if they've already ` +
-        `redeemed a key: they get the rejoin button and are protected from forced teleports.`,
-      ephemeral: true
+        `✅ \`${rawInput}\` (\`${robloxUserId}\`) is now whitelisted — treated as if they've already ` +
+        `redeemed a key: they get the rejoin button and are protected from forced teleports.`
     });
   }
 };

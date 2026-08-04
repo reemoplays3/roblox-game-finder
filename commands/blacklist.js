@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { readUsers, writeUsers, removeId } = require("./lib/userStore");
+const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
 module.exports = {
   ownerOnly: true,
@@ -9,20 +10,21 @@ module.exports = {
     .setDescription("Block a Roblox user from all panel access.")
     .addStringOption(option =>
       option
-        .setName("roblox_user_id")
-        .setDescription("The numeric Roblox user ID.")
+        .setName("roblox_user")
+        .setDescription("Roblox username or numeric user ID.")
         .setRequired(true)
     ),
 
   async execute(interaction) {
-    const robloxUserId = interaction.options
-      .getString("roblox_user_id")
-      .trim();
+    const rawInput = interaction.options.getString("roblox_user").trim();
 
-    if (!/^\d+$/.test(robloxUserId)) {
-      return interaction.reply({
-        content: "⚠️ Please enter a valid numeric Roblox user ID.",
-        ephemeral: true
+    await interaction.deferReply({ ephemeral: true });
+
+    const robloxUserId = await resolveRobloxUserId(rawInput);
+
+    if (!robloxUserId) {
+      return interaction.editReply({
+        content: `⚠️ Could not find a Roblox user matching \`${rawInput}\`.`
       });
     }
 
@@ -37,9 +39,8 @@ module.exports = {
 
     writeUsers(users);
 
-    return interaction.reply({
-      content: `🚫 \`${robloxUserId}\` has been blacklisted from the admin panel.`,
-      ephemeral: true
+    return interaction.editReply({
+      content: `🚫 \`${rawInput}\` (\`${robloxUserId}\`) was blacklisted from all panel access.`
     });
   }
 };

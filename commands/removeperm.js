@@ -1,159 +1,43 @@
-const fs = require("fs");
-const path = require("path");
-
-const usersPath = path.join(
-  process.cwd(),
-  "data",
-  "users.json"
-);
-
-function normalizeIds(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(value.map(String))
-  );
-}
-
-function readUsers() {
-  try {
-    const raw = JSON.parse(
-      fs.readFileSync(usersPath, "utf8")
-    );
-
-    const legacyRedeemAllowed =
-      normalizeIds(raw.whitelisted);
-
-    return {
-      redeemAllowed: Array.from(
-        new Set([
-          ...normalizeIds(raw.redeemAllowed),
-          ...legacyRedeemAllowed
-        ])
-      ),
-
-      permanent:
-        normalizeIds(raw.permanent),
-
-      blacklisted:
-        normalizeIds(raw.blacklisted)
-    };
-  } catch (_error) {
-    return {
-      redeemAllowed: [],
-      permanent: [],
-      blacklisted: []
-    };
-  }
-}
-
-function writeUsers(users) {
-  fs.mkdirSync(path.dirname(usersPath), {
-    recursive: true
-  });
-
-  fs.writeFileSync(
-    usersPath,
-    JSON.stringify(
-      {
-        redeemAllowed:
-          normalizeIds(users.redeemAllowed),
-
-        permanent:
-          normalizeIds(users.permanent),
-
-        blacklisted:
-          normalizeIds(users.blacklisted)
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
-}
-
-function removeId(list, robloxUserId) {
-  return list.filter(
-    value => value !== robloxUserId
-  );
-}
-
-const {
-  SlashCommandBuilder
-} = require("discord.js");
+const { SlashCommandBuilder } = require("discord.js");
+const { readUsers, writeUsers, removeId } = require("./lib/userStore");
+const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
 module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
     .setName("removeperm")
-    .setDescription(
-      "Remove permanent panel access."
-    )
+    .setDescription("Removes a Roblox user's permanent admin access.")
     .addStringOption(option =>
       option
-        .setName("roblox_user_id")
-        .setDescription(
-          "The numeric Roblox user ID."
-        )
+        .setName("roblox_user")
+        .setDescription("Roblox username or numeric user ID.")
         .setRequired(true)
     ),
 
   async execute(interaction) {
-    const robloxUserId = interaction.options
-      .getString("roblox_user_id")
-      .trim();
+    const rawInput = interaction.options.getString("roblox_user").trim();
 
-    if (!/^\d+$/.test(robloxUserId)) {
-      return interaction.reply({
-        content:
-          "Please enter a valid numeric Roblox user ID.",
-        ephemeral: true
+    await interaction.deferReply({ ephemeral: true });
+
+    const robloxUserId = await resolveRobloxUserId(rawInput);
+
+    if (!robloxUserId) {
+      return interaction.editReply({
+        content: `⚠️ Could not find a Roblox user matching \`${rawInput}\`.`
       });
     }
 
     const users = readUsers();
+    const wasPermanent = users.permanent.includes(robloxUserId);
 
-    if (
-      !users.permanent.includes(
-        robloxUserId
-      )
-    ) {
-      return interaction.reply({
-        content:
-          `Roblox user ID \`${robloxUserId}\` does not have permanent panel access.`,
-        ephemeral: true
-      });
-    }
-
-    users.permanent = removeId(
-      users.permanent,
-      robloxUserId
-    );
-
-    users.blacklisted = removeId(
-      users.blacklisted,
-      robloxUserId
-    );
-
-    if (
-      !users.redeemAllowed.includes(
-        robloxUserId
-      )
-    ) {
-      users.redeemAllowed.push(
-        robloxUserId
-      );
-    }
-
+    users.permanent = removeId(users.permanent, robloxUserId);
     writeUsers(users);
 
-    return interaction.reply({
-      content:
-        `Permanent access was removed from \`${robloxUserId}\`. They can still redeem keys normally.`,
-      ephemeral: true
+    return interaction.editReply({
+      content: wasPermanent
+        ? `✅ \`${rawInput}\` (\`${robloxUserId}\`) no longer has permanent access.`
+        : `ℹ️ \`${rawInput}\` (\`${robloxUserId}\`) didn't have permanent access.`
     });
   }
 };

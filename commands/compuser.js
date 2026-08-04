@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
+const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
 module.exports = {
   ownerOnly: true,
@@ -9,8 +10,8 @@ module.exports = {
     .setDescription("Add bonus time to one Roblox user's active or paused key")
     .addStringOption(option =>
       option
-        .setName("roblox_user_id")
-        .setDescription("The numeric Roblox user ID")
+        .setName("roblox_user")
+        .setDescription("Roblox username or numeric user ID.")
         .setRequired(true)
     )
     .addIntegerOption(option =>
@@ -22,16 +23,16 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const robloxUserId = interaction.options
-      .getString("roblox_user_id", true)
-      .trim();
-
+    const rawInput = interaction.options.getString("roblox_user", true).trim();
     const minutes = interaction.options.getInteger("minutes", true);
 
-    if (!/^\d+$/.test(robloxUserId)) {
-      return interaction.reply({
-        content: "⚠️ Please enter a valid numeric Roblox user ID.",
-        ephemeral: true
+    await interaction.deferReply({ ephemeral: true });
+
+    const robloxUserId = await resolveRobloxUserId(rawInput);
+
+    if (!robloxUserId) {
+      return interaction.editReply({
+        content: `⚠️ Could not find a Roblox user matching \`${rawInput}\`.`
       });
     }
 
@@ -62,17 +63,15 @@ module.exports = {
     }
 
     if (updatedCount === 0) {
-      return interaction.reply({
-        content: `⚠️ Roblox user ID \`${robloxUserId}\` does not have an active or paused key right now.`,
-        ephemeral: true
+      return interaction.editReply({
+        content: `⚠️ \`${rawInput}\` (\`${robloxUserId}\`) does not have an active or paused key right now.`
       });
     }
 
     writeKeys(database);
 
-    await interaction.reply({
-      ephemeral: true,
-      content: `🎁 Added ${minutes} minute(s) to \`${robloxUserId}\`'s key.`
+    return interaction.editReply({
+      content: `🎁 Added ${minutes} minute(s) to \`${rawInput}\`'s (\`${robloxUserId}\`) key.`
     });
   }
 };
