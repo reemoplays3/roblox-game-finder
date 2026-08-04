@@ -44,7 +44,7 @@ module.exports = {
   ownerOnly: true,
 
   data: new SlashCommandBuilder()
-    .setName("redeem")
+    .setName("redeemed")
     .setDescription("Shows the 5 most recently redeemed keys"),
 
   async execute(interaction) {
