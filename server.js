@@ -535,6 +535,45 @@ app.post("/transfer-time", (req, res) => {
   });
 });
 
+function findLinkedDiscordUserId(robloxUserId) {
+  const database = readKeysDatabase();
+  const now = Date.now();
+
+  const linkedKeys = database.keys.filter(item =>
+    !item.revoked &&
+    String(item.redeemedBy || "") === robloxUserId &&
+    item.discordUserId
+  );
+
+  if (linkedKeys.length === 0) {
+    return null;
+  }
+
+  const activeOrPaused = linkedKeys.find(item =>
+    (item.paused === true && Number(item.pausedRemainingSeconds) > 0) ||
+    (item.paused !== true && Number(item.expiresAt) > now)
+  );
+
+  if (activeOrPaused) {
+    return String(activeOrPaused.discordUserId);
+  }
+
+  linkedKeys.sort((a, b) => Number(b.created || 0) - Number(a.created || 0));
+  return String(linkedKeys[0].discordUserId);
+}
+
+app.post("/discord-link", (req, res) => {
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+
+  if (!robloxUserId) {
+    return res.status(400).json({ discordUserId: null });
+  }
+
+  return res.json({
+    discordUserId: findLinkedDiscordUserId(robloxUserId)
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("Sweet TP API is running!");
 });
