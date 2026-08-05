@@ -576,6 +576,237 @@ app.post("/discord-link", (req, res) => {
   });
 });
 
+// Shared secret required on every secret-panel action below. Only your
+// Roblox server script (never the client) knows this value, so even
+// someone who extracts your Render URL and calls it directly with curl
+// can't use these without also knowing this token.
+const SECRET_PANEL_TOKEN = "121212343434565656787878";
+
+function checkSecretPanelAuth(req, res) {
+  const providedToken = String(req.headers["x-panel-token"] || "");
+  if (providedToken !== SECRET_PANEL_TOKEN) {
+    res.status(403).json({ success: false, message: "Unauthorized." });
+    return false;
+  }
+  return true;
+}
+
+app.post("/admin-panel-stats", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const users = readUsersDatabase();
+
+  const notBlockedOrNeutral = id =>
+    !users.blacklisted.includes(id) && !users.neutral.includes(id);
+
+  const whitelisted = Array.from(
+    new Set([...users.everRedeemed, ...users.permanent])
+  ).filter(notBlockedOrNeutral);
+
+  return res.json({
+    success: true,
+    banned: users.banned,
+    whitelisted,
+    blacklisted: users.blacklisted,
+    bannedCount: users.banned.length,
+    whitelistedCount: whitelisted.length,
+    blacklistedCount: users.blacklisted.length
+  });
+});
+
+app.post("/admin-active-keys", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const database = readKeysDatabase();
+  const now = Date.now();
+
+  const activeKeys = database.keys
+    .filter(item => item.redeemed === true && !item.revoked)
+    .map(item => {
+      let remainingSeconds = 0;
+      let paused = false;
+
+      if (item.paused === true && Number(item.pausedRemainingSeconds) > 0) {
+        remainingSeconds = Number(item.pausedRemainingSeconds);
+        paused = true;
+      } else if (item.paused !== true && Number(item.expiresAt) > now) {
+        remainingSeconds = Math.floor((Number(item.expiresAt) - now) / 1000);
+      }
+
+      return {
+        key: item.key,
+        robloxUserId: item.redeemedBy,
+        remainingSeconds,
+        paused
+      };
+    })
+    .filter(entry => entry.remainingSeconds > 0)
+    .sort((a, b) => b.remainingSeconds - a.remainingSeconds);
+
+  return res.json({ success: true, keys: activeKeys });
+});
+
+app.post("/admin-action-ban", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+  if (!robloxUserId) {
+    return res.status(400).json({ success: false, message: "No user ID provided." });
+  }
+
+  const users = readUsersDatabase();
+
+  if (!users.banned.includes(robloxUserId)) {
+    users.banned.push(robloxUserId);
+    writeUsersDatabase(users);
+  }
+
+  return res.json({ success: true, message: "User banned." });
+});
+
+app.post("/admin-action-whitelist", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+  if (!robloxUserId) {
+    return res.status(400).json({ success: false, message: "No user ID provided." });
+  }
+
+  const users = readUsersDatabase();
+
+  users.blacklisted = users.blacklisted.filter(id => id !== robloxUserId);
+  users.neutral = users.neutral.filter(id => id !== robloxUserId);
+
+  if (!users.everRedeemed.includes(robloxUserId)) {
+    users.everRedeemed.push(robloxUserId);
+  }
+
+  writeUsersDatabase(users);
+
+  return res.json({ success: true, message: "User whitelisted." });
+});
+
+app.post("/admin-action-blacklist", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+  if (!robloxUserId) {
+    return res.status(400).json({ success: false, message: "No user ID provided." });
+  }
+
+  const users = readUsersDatabase();
+
+  users.redeemAllowed = users.redeemAllowed.filter(id => id !== robloxUserId);
+  users.permanent = users.permanent.filter(id => id !== robloxUserId);
+
+  if (!users.blacklisted.includes(robloxUserId)) {
+    users.blacklisted.push(robloxUserId);
+  }
+
+  writeUsersDatabase(users);
+
+  return res.json({ success: true, message: "User blacklisted." });
+});
+
+app.post("/admin-action-revoke-key", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+  if (!robloxUserId) {
+    return res.status(400).json({ success: false, message: "No user ID provided." });
+  }
+
+  const database = readKeysDatabase();
+  const now = Date.now();
+
+  const beforeCount = database.keys.length;
+
+  database.keys = database.keys.filter(item => {
+    const isThisUsersActiveKey =
+      String(item.redeemedBy || "") === robloxUserId &&
+      !item.revoked &&
+      (
+        (item.paused === true && Number(item.pausedRemainingSeconds) > 0) ||
+        (item.paused !== true && Number(item.expiresAt) > now)
+      );
+    return !isThisUsersActiveKey;
+  });
+
+  const removedCount = beforeCount - database.keys.length;
+
+  if (removedCount === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "That user has no active or paused key to revoke."
+    });
+  }
+
+  writeKeysDatabase(database);
+
+  return res.json({ success: true, message: "Key revoked." });
+});
+
+app.post("/admin-action-add-time", (req, res) => {
+  if (!checkSecretPanelAuth(req, res)) return;
+
+  const robloxUserId = String(req.body.robloxUserId || "").trim();
+  const minutes = Number(req.body.minutes);
+
+  if (!robloxUserId) {
+    return res.status(400).json({ success: false, message: "No user ID provided." });
+  }
+
+  if (!Number.isFinite(minutes) || minutes <= 0 || !Number.isInteger(minutes)) {
+    return res.status(400).json({ success: false, message: "Enter a valid whole number of minutes." });
+  }
+
+  const database = readKeysDatabase();
+  const now = Date.now();
+  const addMs = minutes * 60 * 1000;
+  const addSeconds = minutes * 60;
+
+  const holderKey = database.keys.find(item =>
+    String(item.redeemedBy || "") === robloxUserId &&
+    !item.revoked &&
+    (
+      (item.paused === true && Number(item.pausedRemainingSeconds) > 0) ||
+      (item.paused !== true && Number(item.expiresAt) > now)
+    )
+  );
+
+  if (holderKey) {
+    if (holderKey.paused === true) {
+      holderKey.pausedRemainingSeconds = Number(holderKey.pausedRemainingSeconds) + addSeconds;
+    } else {
+      holderKey.expiresAt = Number(holderKey.expiresAt) + addMs;
+    }
+  } else {
+    database.keys.push({
+      key: crypto.randomBytes(6).toString("hex").toUpperCase(),
+      minutes,
+      created: now,
+      redeemed: true,
+      redeemedAt: now,
+      redeemedBy: robloxUserId,
+      expiresAt: now + addMs,
+      paused: false,
+      pausedAt: null,
+      pausedRemainingSeconds: null,
+      pausedLocked: false,
+      pausedByAdmin: false,
+      discordUserId: null,
+      revoked: false,
+      revokedAt: null
+    });
+  }
+
+  writeKeysDatabase(database);
+  recordEverRedeemed(robloxUserId);
+
+  return res.json({ success: true, message: `Added ${minutes} minute(s).` });
+});
+
+
 app.get("/", (req, res) => {
   res.send("Sweet TP API is running!");
 });
