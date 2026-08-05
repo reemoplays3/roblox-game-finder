@@ -373,7 +373,7 @@ function getUserStatus(
     !permanentStatus.isNeutral &&
     (hasRedeemedBefore || permanentStatus.permanentlyWhitelisted);
 
-  return {
+return {
     hasRedeemedBefore,
     hasActiveKey: remainingSeconds > 0,
     paused,
@@ -386,6 +386,8 @@ function getUserStatus(
       permanentStatus.blacklisted,
     isNeutral:
       permanentStatus.isNeutral,
+    banned:
+      permanentStatus.banned,
     eligibleForRejoin
   };
 }
@@ -946,9 +948,28 @@ app.post("/validate", (req, res) => {
     robloxUserId
   );
 
+  // Banned takes priority over everything else — checked FIRST, before
+  // blacklisted, so a banned player's status always surfaces banned:true
+  // regardless of any other flag, and AdminServer.lua can kick them.
+  if (status.banned) {
+    return res.json({
+      success: false,
+      banned: true,
+      blacklisted: status.blacklisted,
+      permanentlyWhitelisted: false,
+      allowedToRedeem: false,
+      hasRedeemedBefore:
+        status.hasRedeemedBefore,
+      eligibleForRejoin: false,
+      hasActiveKey: false,
+      remainingSeconds: 0
+    });
+  }
+
   if (status.blacklisted) {
     return res.json({
       success: false,
+      banned: false,
       blacklisted: true,
       permanentlyWhitelisted: false,
       allowedToRedeem:
@@ -965,6 +986,8 @@ app.post("/validate", (req, res) => {
     success:
       status.permanentlyWhitelisted ||
       status.hasActiveKey,
+
+    banned: false,
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
@@ -1022,6 +1045,9 @@ app.post("/user-status", (req, res) => {
 
     blacklisted:
       status.blacklisted,
+
+    banned:
+      status.banned,
 
     hasRedeemedBefore:
       status.hasRedeemedBefore,
