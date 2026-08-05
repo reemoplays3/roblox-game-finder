@@ -2,6 +2,33 @@ const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
+const REDEEM_LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1534255329230065704/I_WByyZTcmnqjISjxKB61BwaInwokLNXpuTmIPqfufsJGotQhLtFyA1zUgtWh7sfND--";
+
+async function postCompLog(discordUsername, robloxDisplay, robloxUserId, minutes) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🎁 Time Added",
+            color: 0x2ecc71,
+            fields: [
+              { name: "👤 User", value: `${robloxDisplay}\n\`${robloxUserId}\``, inline: true },
+              { name: "⏱️ Amount", value: `${minutes} minute(s)`, inline: true },
+              { name: "👮 Added By", value: discordUsername, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post comp log:", error);
+  }
+}
+
 module.exports = {
   ownerOnly: true,
 
@@ -69,6 +96,8 @@ module.exports = {
     }
 
     writeKeys(database);
+
+    postCompLog(interaction.user.tag, rawInput, robloxUserId, minutes);
 
     return interaction.editReply({
       content: `🎁 Added ${minutes} minute(s) to \`${rawInput}\`'s (\`${robloxUserId}\`) key.`

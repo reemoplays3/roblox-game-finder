@@ -1,6 +1,33 @@
 const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys } = require("./lib/keyStore");
 
+const REDEEM_LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1534255329230065704/I_WByyZTcmnqjISjxKB61BwaInwokLNXpuTmIPqfufsJGotQhLtFyA1zUgtWh7sfND--";
+
+async function postCompLog(discordUsername, minutes, updatedCount) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🎁 Time Added (All Keys)",
+            color: 0x2ecc71,
+            fields: [
+              { name: "⏱️ Amount", value: `${minutes} minute(s)`, inline: true },
+              { name: "🔢 Keys Affected", value: String(updatedCount), inline: true },
+              { name: "👮 Added By", value: discordUsername, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post comp log:", error);
+  }
+}
+
 module.exports = {
   ownerOnly: true,
 
@@ -41,6 +68,7 @@ module.exports = {
 
     if (updatedCount > 0) {
       writeKeys(database);
+      postCompLog(interaction.user.tag, minutes, updatedCount);
     }
 
     await interaction.reply({
