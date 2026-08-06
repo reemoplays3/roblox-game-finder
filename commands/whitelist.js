@@ -2,6 +2,32 @@ const { SlashCommandBuilder } = require("discord.js");
 const { readUsers, writeUsers, removeId } = require("./lib/userStore");
 const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
+const REDEEM_LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1534255329230065704/I_WByyZTcmnqjISjxKB61BwaInwokLNXpuTmIPqfufsJGotQhLtFyA1zUgtWh7sfND--";
+
+async function postWhitelistLog(discordUsername, robloxDisplay, robloxUserId) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🟢 User Whitelisted",
+            color: 0x2ecc71,
+            fields: [
+              { name: "👤 User", value: `${robloxDisplay}\n\`${robloxUserId}\``, inline: true },
+              { name: "👮 Whitelisted By", value: discordUsername, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post whitelist log:", error);
+  }
+}
+
 module.exports = {
   ownerOnly: true,
 
@@ -39,10 +65,10 @@ module.exports = {
 
     writeUsers(users);
 
+    postWhitelistLog(interaction.user.tag, rawInput, robloxUserId);
+
     return interaction.editReply({
       content:
         `✅ \`${rawInput}\` (\`${robloxUserId}\`) is now whitelisted — treated as if they've already ` +
         `redeemed a key: they get the rejoin button and are protected from forced teleports.`
     });
-  }
-};

@@ -2,6 +2,34 @@ const { SlashCommandBuilder } = require("discord.js");
 const { readKeys, writeKeys, makeKeyEntry } = require("./lib/keyStore");
 const { resolveRobloxUserId } = require("./lib/robloxLookup");
 
+const REDEEM_LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1534255329230065704/I_WByyZTcmnqjISjxKB61BwaInwokLNXpuTmIPqfufsJGotQhLtFyA1zUgtWh7sfND--";
+
+async function postTransferLog(discordUsername, fromUserId, toUserId, minutes) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🔁 Time Transferred",
+            color: 0x1fb8f0,
+            fields: [
+              { name: "📤 From", value: `\`${fromUserId}\``, inline: true },
+              { name: "📥 To", value: `\`${toUserId}\``, inline: true },
+              { name: "⏱️ Minutes", value: String(minutes), inline: true },
+              { name: "👮 Transferred By", value: discordUsername, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post transfer log:", error);
+  }
+}
+
 function formatDuration(seconds) {
   seconds = Math.max(0, Math.floor(seconds));
   const days = Math.floor(seconds / 86400);
@@ -134,8 +162,8 @@ module.exports = {
 
     writeKeys(database);
 
+    postTransferLog(interaction.user.tag, fromUserId, toUserId, minutes);
+
     return interaction.editReply({
       content: `🔁 Transferred ${minutes} minute(s) from \`${fromRawInput}\` to \`${toRawInput}\`.`
     });
-  }
-};

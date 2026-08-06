@@ -89,6 +89,31 @@ async function postRedeemLog({ key, robloxUserId, minutes, wasFirstRedeem, merge
   }
 }
 
+async function postInGameTransferLog(fromUserId, toUserId, minutes) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🔁 Time Transferred (In-Game)",
+            color: 0x1fb8f0,
+            fields: [
+              { name: "📤 From", value: `\`${fromUserId}\``, inline: true },
+              { name: "📥 To", value: `\`${toUserId}\``, inline: true },
+              { name: "⏱️ Minutes", value: String(minutes), inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post in-game transfer log:", error);
+  }
+}
+
 app.use(
   express.json({
     verify: (req, res, buf) => {
@@ -702,6 +727,30 @@ app.post("/admin-action-ban", (req, res) => {
   return res.json({ success: true, message: "User banned." });
 });
 
+async function postInGameWhitelistLog(robloxUserId, performedByLabel) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🟢 User Whitelisted (In-Game)",
+            color: 0x2ecc71,
+            fields: [
+              { name: "👤 User", value: `\`${robloxUserId}\``, inline: true },
+              { name: "👮 Whitelisted By", value: performedByLabel, inline: true }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post in-game whitelist log:", error);
+  }
+}
+
 app.post("/admin-action-whitelist", (req, res) => {
   if (!checkSecretPanelAuth(req, res)) return;
 
@@ -720,6 +769,12 @@ app.post("/admin-action-whitelist", (req, res) => {
   }
 
   writeUsersDatabase(users);
+
+  const performedByLabel = req.body.performedByRobloxName
+    ? `${req.body.performedByRobloxName} (\`${req.body.performedByRobloxUserId || "?"}\`)`
+    : "In-Game Admin Panel";
+
+  postInGameWhitelistLog(robloxUserId, performedByLabel);
 
   return res.json({ success: true, message: "User whitelisted." });
 });
