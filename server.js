@@ -23,6 +23,8 @@ const usersPath = path.join(process.cwd(), "data", "users.json");
 const redemptionsPath = path.join(process.cwd(), "data", "redemptions.json");
 const MAX_REDEMPTION_LOG_ENTRIES = 200;
 
+
+
 function readRedemptionLog() {
   try {
     const data = JSON.parse(fs.readFileSync(redemptionsPath, "utf8"));
@@ -49,6 +51,42 @@ function appendRedemptionLogEntry(entry) {
   }
 
   writeRedemptionLog(log);
+}
+
+const REDEEM_LOG_WEBHOOK_URL = "https://discord.com/api/webhooks/1534255329230065704/I_WByyZTcmnqjISjxKB61BwaInwokLNXpuTmIPqfufsJGotQhLtFyA1zUgtWh7sfND--";
+
+async function postRedeemLog({ key, robloxUserId, minutes, wasFirstRedeem, mergedIntoExisting }) {
+  try {
+    await fetch(REDEEM_LOG_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        embeds: [
+          {
+            title: "🔑 Key Redeemed",
+            color: 0x2ecc71,
+            fields: [
+              { name: "🔑 Key", value: `\`${key}\``, inline: true },
+              { name: "👤 Roblox User", value: `\`${robloxUserId}\``, inline: true },
+              { name: "⏱️ Minutes Added", value: String(minutes), inline: true },
+              {
+                name: "📋 Details",
+                value: wasFirstRedeem
+                  ? "🆕 First redeem — granted admin panel access"
+                  : mergedIntoExisting
+                  ? "➕ Added time to an existing session"
+                  : "🟢 Started a new session",
+                inline: false
+              }
+            ],
+            timestamp: new Date().toISOString()
+          }
+        ]
+      })
+    });
+  } catch (error) {
+    console.error("Could not post redeem log:", error);
+  }
 }
 
 app.use(
@@ -984,6 +1022,14 @@ app.post("/redeem", (req, res) => {
   });
 
   // Best-effort — never blocks or fails the redemption itself.
+  postRedeemLog({
+    key: enteredKey,
+    robloxUserId,
+    minutes,
+    wasFirstRedeem,
+    mergedIntoExisting
+  });
+
   grantBuyerRole(discordUserIdForRole);
 
   return res.json({
