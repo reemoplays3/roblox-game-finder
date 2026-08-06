@@ -979,7 +979,6 @@ app.post("/redeem", (req, res) => {
   }
 
   if (
-if (
     permanentStatus.permanentlyWhitelisted ||
     permanentStatus.lifetimeAccess
   ) {
