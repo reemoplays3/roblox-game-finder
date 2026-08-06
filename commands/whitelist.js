@@ -67,8 +67,10 @@ module.exports = {
 
     postWhitelistLog(interaction.user.tag, rawInput, robloxUserId);
 
-    return interaction.editReply({
+return interaction.editReply({
       content:
         `✅ \`${rawInput}\` (\`${robloxUserId}\`) is now whitelisted — treated as if they've already ` +
         `redeemed a key: they get the rejoin button and are protected from forced teleports.`
     });
+  }
+};

@@ -167,3 +167,5 @@ module.exports = {
     return interaction.editReply({
       content: `🔁 Transferred ${minutes} minute(s) from \`${fromRawInput}\` to \`${toRawInput}\`.`
     });
+  }
+};
