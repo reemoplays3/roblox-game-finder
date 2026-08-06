@@ -50,7 +50,6 @@ function writeUsers(users) {
     usersPath,
     JSON.stringify(
       {
-        {
         redeemAllowed: normalizeIds(users.redeemAllowed),
         permanent: normalizeIds(users.permanent),
         lifetime: normalizeIds(users.lifetime),
