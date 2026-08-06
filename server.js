@@ -240,6 +240,10 @@ function readUsersDatabase() {
       users.permanent = [];
     }
 
+    if (!Array.isArray(users.lifetime)) {
+      users.lifetime = [];
+    }
+
     if (!Array.isArray(users.blacklisted)) {
       users.blacklisted = [];
     }
@@ -265,6 +269,9 @@ function readUsersDatabase() {
 
     users.permanent =
       users.permanent.map(String);
+
+    users.lifetime =
+      users.lifetime.map(String);
 
     users.blacklisted =
       users.blacklisted.map(String);
@@ -307,6 +314,7 @@ function writeUsersDatabase(users) {
       {
         redeemAllowed: Array.from(new Set((users.redeemAllowed || []).map(String))),
         permanent: Array.from(new Set((users.permanent || []).map(String))),
+        lifetime: Array.from(new Set((users.lifetime || []).map(String))),
         blacklisted: Array.from(new Set((users.blacklisted || []).map(String))),
         neutral: Array.from(new Set((users.neutral || []).map(String))),
         everRedeemed: Array.from(new Set((users.everRedeemed || []).map(String))),
@@ -345,6 +353,11 @@ function getAccessListStatus(robloxUserId) {
 
     permanentlyWhitelisted:
       users.permanent.includes(
+        robloxUserId
+      ),
+
+    lifetimeAccess:
+      users.lifetime.includes(
         robloxUserId
       ),
 
@@ -427,14 +440,24 @@ function getUserStatus(
   const permanentStatus =
     getAccessListStatus(robloxUserId);
 
+  const hasOpenEndedAccess =
+    permanentStatus.permanentlyWhitelisted ||
+    permanentStatus.lifetimeAccess;
+
+  // True only for lifetime-key holders (not full permanent admins) —
+  // used to gate time transfer / Buyer role / other restricted actions.
+  const lifetimeRestricted =
+    permanentStatus.lifetimeAccess &&
+    !permanentStatus.permanentlyWhitelisted;
+
   // "Whitelisted" here means: this person has proven history (redeemed a
-  // key before, or has permanent access) and hasn't been blocked or reset
-  // back to neutral. This is what decides whether they get a rejoin
-  // button when they currently have no active/paused key.
+  // key before, or has permanent/lifetime access) and hasn't been blocked
+  // or reset back to neutral. This is what decides whether they get a
+  // rejoin button when they currently have no active/paused key.
   const eligibleForRejoin =
     !permanentStatus.blacklisted &&
     !permanentStatus.isNeutral &&
-    (hasRedeemedBefore || permanentStatus.permanentlyWhitelisted);
+    (hasRedeemedBefore || hasOpenEndedAccess);
 
 return {
     hasRedeemedBefore,
@@ -444,7 +467,8 @@ return {
     allowedToRedeem:
       permanentStatus.allowedToRedeem,
     permanentlyWhitelisted:
-      permanentStatus.permanentlyWhitelisted,
+      hasOpenEndedAccess,
+    lifetimeRestricted,
     blacklisted:
       permanentStatus.blacklisted,
     isNeutral:
@@ -501,6 +525,13 @@ app.post("/transfer-time", (req, res) => {
     });
   }
 
+  if (fromStatus.lifetimeAccess) {
+    return res.status(403).json({
+      success: false,
+      message: "Lifetime keys cannot transfer time."
+    });
+  }
+
   const toStatus = getAccessListStatus(toUserId);
 
   if (toStatus.blacklisted) {
@@ -514,6 +545,13 @@ app.post("/transfer-time", (req, res) => {
     return res.status(400).json({
       success: false,
       message: "That user already has permanent access."
+    });
+  }
+
+  if (toStatus.lifetimeAccess) {
+    return res.status(400).json({
+      success: false,
+      message: "That user already has lifetime access."
     });
   }
 
@@ -941,17 +979,23 @@ app.post("/redeem", (req, res) => {
   }
 
   if (
-    permanentStatus.permanentlyWhitelisted
+if (
+    permanentStatus.permanentlyWhitelisted ||
+    permanentStatus.lifetimeAccess
   ) {
     return res.json({
       success: true,
       permanentlyWhitelisted: true,
+      lifetimeRestricted:
+        permanentStatus.lifetimeAccess &&
+        !permanentStatus.permanentlyWhitelisted,
       allowedToRedeem: true,
       hasRedeemedBefore: false,
       hasActiveKey: false,
       remainingSeconds: 0,
-      message:
-        "This Roblox user has permanent access."
+      message: permanentStatus.permanentlyWhitelisted
+        ? "This Roblox user has permanent access."
+        : "This Roblox user has lifetime access."
     });
   }
 
@@ -1126,7 +1170,7 @@ app.post("/pause-time", (req, res) => {
     });
   }
 
-  if (permanentStatus.permanentlyWhitelisted) {
+if (permanentStatus.permanentlyWhitelisted || permanentStatus.lifetimeAccess) {
     return res.status(400).json({
       success: false,
       message: "Permanent access cannot be paused."
@@ -1324,6 +1368,9 @@ app.post("/validate", (req, res) => {
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
 
+    lifetimeRestricted:
+      status.lifetimeRestricted,
+
     allowedToRedeem:
       status.allowedToRedeem,
 
@@ -1371,6 +1418,9 @@ app.post("/user-status", (req, res) => {
 
     permanentlyWhitelisted:
       status.permanentlyWhitelisted,
+
+    lifetimeRestricted:
+      status.lifetimeRestricted,
 
     allowedToRedeem:
       status.allowedToRedeem,
@@ -1423,6 +1473,13 @@ app.post("/request-buyer-role", async (req, res) => {
     return res.status(403).json({
       success: false,
       message: "You are blacklisted and can't request the role."
+    });
+  }
+
+  if (permanentStatus.lifetimeAccess && !permanentStatus.permanentlyWhitelisted) {
+    return res.status(403).json({
+      success: false,
+      message: "Lifetime keys cannot request the Buyer role."
     });
   }
 

@@ -24,6 +24,7 @@ function readUsers() {
         ])
       ),
       permanent: normalizeIds(raw.permanent),
+      lifetime: normalizeIds(raw.lifetime),
       blacklisted: normalizeIds(raw.blacklisted),
       neutral: normalizeIds(raw.neutral),
       everRedeemed: normalizeIds(raw.everRedeemed),
@@ -33,6 +34,7 @@ function readUsers() {
     return {
       redeemAllowed: [],
       permanent: [],
+      lifetime: [],
       blacklisted: [],
       neutral: [],
       everRedeemed: [],
@@ -48,8 +50,10 @@ function writeUsers(users) {
     usersPath,
     JSON.stringify(
       {
+        {
         redeemAllowed: normalizeIds(users.redeemAllowed),
         permanent: normalizeIds(users.permanent),
+        lifetime: normalizeIds(users.lifetime),
         blacklisted: normalizeIds(users.blacklisted),
         neutral: normalizeIds(users.neutral),
         everRedeemed: normalizeIds(users.everRedeemed),
