@@ -10,8 +10,8 @@ const STORE_TITLE = "Sweet TP — Purchase Access";
 const STORE_DESCRIPTION = "**Instant delivery. Pay with crypto or card.**";
 const STORE_URL = "https://sweettp.mykomerza.com/";
 const FOOTER_TEXT = "All prices in USD · your key arrives right after checkout";
-const COUPON_CODE = "SAVE25";
-const COUPON_DISCOUNT_TEXT = "25% off · unlimited uses";
+const COUPON_CODE = "SAVE50";
+const COUPON_DISCOUNT_TEXT = "50% off · unlimited uses";
 
 const TIERS = [
   { label: "1 Hour", price: "$7.99" },
