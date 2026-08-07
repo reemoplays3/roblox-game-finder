@@ -20,7 +20,7 @@ const client = new Client({
 
 client.commands = new Collection();
 
-const BUYER_ROLE_NAME = "Buyer";
+const BUYER_ROLE_NAME = "Sweet Anchor Buyer";
 
 // Gives the Discord "Buyer" role to a Discord user. Used both by the
 // instant-grant path (redeeming a key that /keysend linked to someone)
